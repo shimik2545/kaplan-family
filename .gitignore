@@ -1,0 +1,13 @@
+# קבצים אישיים — לא להעלות למאגר ציבורי
+*.ged
+*.xlsx
+*.xls
+*.csv
+
+# גיבוי הגרסה המקוונת הישנה — לא נחוץ באתר
+index.online-backup.html
+
+# קבצי מערכת
+Thumbs.db
+.DS_Store
+desktop.ini
