@@ -2,7 +2,7 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>ניהול הבית - מערכת משפחתית</title>
 <!-- פתיחה כאפליקציה במסך מלא (iOS / Android) -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -208,7 +208,13 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   }
   #view.fit-view .calendar-day,
   #view.fit-view .calendar-day.shabbat,
-  #view.fit-view .calendar-day.holiday { min-height: 0; }
+  #view.fit-view .calendar-day.holiday { min-height: 0; padding: 4px 5px; }
+  /* במסך מלא - תוכן התא קומפקטי כדי שייכנס בלי להיחתך */
+  #view.fit-view .calendar-day-events { margin-top: 2px; gap: 1px; }
+  #view.fit-view .cal-event { font-size: 9px; padding: 1px 4px; line-height: 1.25; }
+  #view.fit-view .cal-shabbat-block { margin-top: 2px; padding-top: 2px; }
+  #view.fit-view .cal-parsha { font-size: 9px; }
+  #view.fit-view .cal-shabbat-exit { font-size: 8px; }
   /* שורות במסך הבית */
   .home-row-top { flex: 0 0 auto; height: 420px; max-height: 50vh; }
   .home-row-top > .card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -645,6 +651,22 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     text-overflow: ellipsis;
     line-height: 1.3;
   }
+  /* רשימת בחירת בן משפחה עם חיפוש (טופס יום הולדת) */
+  .member-dd {
+    position: absolute; left: 0; right: 0; top: 100%; z-index: 50;
+    margin-top: 4px; max-height: 220px; overflow-y: auto;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  }
+  .member-dd-item {
+    padding: 10px 12px; cursor: pointer; font-size: 14px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .member-dd-item:last-child { border-bottom: none; }
+  .member-dd-item:hover, .member-dd-item.active { background: var(--bg-tertiary); }
+  .member-dd-item .mdd-sub { font-size: 11px; color: var(--text-muted); }
+  .member-dd-empty { padding: 10px 12px; font-size: 13px; color: var(--text-muted); }
   .cal-event.holiday { background: rgba(201, 169, 110, 0.25); color: var(--gold-light); }
   .cal-event.birthday { background: rgba(91, 157, 127, 0.25); color: #87c4a4; }
   .cal-event.yahrzeit { background: rgba(125, 138, 163, 0.2); color: var(--text-secondary); }
@@ -1242,6 +1264,11 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   *::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 3px; }
 
   /* SETTINGS */
+  /* חסימת זום בהקשה כפולה (iOS מתעלם מ-user-scalable בחלק מהמצבים) */
+  html, body {
+    touch-action: manipulation;
+  }
+
   /* תמונת רקע למסך הבית - שכבה קבועה מאחורי התוכן עם כהות לקריאות */
   .home-bg {
     position: fixed;
@@ -3217,6 +3244,9 @@ function renderShabbatScreen() {
   const greeting = isChag ? 'א פריילאכן יום טוב' : 'גוט שאבעס';
   const subtitle = isChag ? (currentChagName || 'חג קודש') : 'שבת קודש';
 
+  // מתי יוצאת השבת/החג
+  const exitInfo = getHolyDayExitInfo();
+
   // הוסף/הסר class לפי סוג המצב (שבת או חג) - לבחירת רקע
   if (isChag) scr.classList.add('is-chag');
   else scr.classList.remove('is-chag');
@@ -3244,6 +3274,13 @@ function renderShabbatScreen() {
       </div>
 
       <div class="shabbat-date">${hebStr}<br><span style="font-family: 'Heebo', sans-serif; font-size: 16px; color: #c9a96e;">${dateStr}</span></div>
+
+      ${exitInfo && exitInfo.time ? `
+        <div class="shabbat-motzei">
+          <span class="shabbat-motzei-label">${exitInfo.label}</span>
+          <span class="shabbat-motzei-time">${exitInfo.time}</span>
+        </div>
+      ` : ''}
 
       <div class="shabbat-section">
         <div class="shabbat-section-title">זמני היום</div>
@@ -5823,13 +5860,40 @@ function onBdNameChange() {
   const d = document.getElementById('bd-date');
   if (m && m.birthday && d && !d.value) d.value = m.birthday;
 }
+// רשימת בני משפחה נפתחת עם חיפוש - סינון לפי מה שהוקלד
+function bdRenderMemberList() {
+  const inp = document.getElementById('bd-name');
+  const dd = document.getElementById('bd-name-dd');
+  if (!inp || !dd) return;
+  const q = (inp.value || '').trim().toLowerCase();
+  const matches = State.family.filter(m => !q || (m.name || '').toLowerCase().includes(q));
+  if (matches.length === 0) {
+    dd.innerHTML = `<div class="member-dd-empty">אין בן משפחה תואם — יישמר כשם חופשי</div>`;
+  } else {
+    dd.innerHTML = matches.map(m => {
+      const sub = m.birthday ? ('תאריך לידה: ' + new Date(m.birthday).toLocaleDateString('he-IL')) : 'אין תאריך לידה';
+      return `<div class="member-dd-item" onmousedown="bdPickMember('${m.id}')"><span>${esc(m.name)}</span><span class="mdd-sub">${sub}</span></div>`;
+    }).join('');
+  }
+  dd.style.display = 'block';
+}
+function bdShowMemberList() { bdRenderMemberList(); }
+function bdHideMemberList() { const dd = document.getElementById('bd-name-dd'); if (dd) setTimeout(() => { dd.style.display = 'none'; }, 150); }
+function bdPickMember(id) {
+  const m = State.family.find(x => x.id === id);
+  const inp = document.getElementById('bd-name');
+  const dd = document.getElementById('bd-name-dd');
+  if (!m || !inp) return;
+  inp.value = m.name;
+  if (dd) dd.style.display = 'none';
+  onBdNameChange();
+}
 function addBirthday(existing, prefill) {
   const b = existing || { id: Date.now().toString(), name: '', date: prefill?.date || '' };
-  const nameOpts = State.family.map(m => `<option value="${esc(m.name)}">`).join('');
   openModal(existing ? 'עריכת יום הולדת' : 'הוספת יום הולדת', `
-    <div class="form-group"><label class="form-label">שם (בחר בן משפחה או הקלד שם חופשי)</label>
-      <input type="text" id="bd-name" value="${esc(b.name)}" list="bd-name-list" onchange="onBdNameChange()" oninput="onBdNameChange()">
-      <datalist id="bd-name-list">${nameOpts}</datalist>
+    <div class="form-group" style="position:relative;"><label class="form-label">שם (בחר בן משפחה מהרשימה או הקלד שם חופשי)</label>
+      <input type="text" id="bd-name" value="${esc(b.name)}" autocomplete="off" oninput="bdRenderMemberList()" onfocus="bdShowMemberList()" onblur="bdHideMemberList()">
+      <div id="bd-name-dd" class="member-dd" style="display:none;"></div>
     </div>
     <div class="form-group"><label class="form-label">תאריך לידה</label><input type="date" id="bd-date" value="${b.date}"></div>
   `, () => {
@@ -8146,6 +8210,10 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 }
 
 window.addEventListener('DOMContentLoaded', init);
+
+// חסימת זום בצביטה (iOS/iPad - כולל במצב אפליקציה); הקשה כפולה נחסמת ע"י touch-action
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('gesturechange', e => e.preventDefault());
 
 // Expose to global so onclick handlers work
 Object.assign(window, {
