@@ -4161,8 +4161,16 @@ function highlightMatch(text, query) {
 }
 
 function addFamilyMember(existing) {
-  const f = existing || { id: Date.now().toString(), name: '', relation: '', birthday: '', phone: '', notes: '', spouseId: '', parentIds: [] };
+  const f = existing || { id: Date.now().toString(), name: '', relation: '', gender: '', birthday: '', phone: '', notes: '', spouseId: '', parentIds: [] };
   if (!f.parentIds) f.parentIds = [];
+  // שנים עבריות לבחירה - 120 שנה אחורה מהשנה הנוכחית, בגימטריה
+  const HCy = getHebcal();
+  const curHebYear = (gregToHebrew(new Date()) || {}).year || 5786;
+  const hebYearOpts = Array.from({ length: 121 }, (_, i) => curHebYear - i).map(y => {
+    let label = y;
+    try { if (HCy && HCy.gematriya) label = HCy.gematriya(y); } catch (e) {}
+    return `<option value="${y}" ${f.hebYear === y ? 'selected' : ''}>${label}</option>`;
+  }).join('');
   const relOpts = FAMILY_RELATIONS.map(r => `<option value="${r}" ${f.relation === r ? 'selected' : ''}>${r}</option>`).join('');
   // אופציות לבחירת בן/בת זוג והורים - רק בני משפחה אחרים
   const otherMembers = State.family.filter(m => m.id !== f.id);
@@ -4178,6 +4186,13 @@ function addFamilyMember(existing) {
     <div class="form-group"><label class="form-label">קרבה</label>
       <select id="fm-relation"><option value="">- בחר -</option>${relOpts}</select>
     </div>
+    <div class="form-group"><label class="form-label">מין</label>
+      <select id="fm-gender">
+        <option value="">- בחר -</option>
+        <option value="זכר" ${f.gender === 'זכר' ? 'selected' : ''}>זכר</option>
+        <option value="נקבה" ${f.gender === 'נקבה' ? 'selected' : ''}>נקבה</option>
+      </select>
+    </div>
     <div class="form-group">
       <label class="form-label">תאריך לידה (לועזי) — יום ההולדת ייחגג לפי התאריך העברי</label>
       <div style="display:flex; gap:6px; align-items:center;">
@@ -4187,7 +4202,7 @@ function addFamilyMember(existing) {
     </div>
     <div class="form-group">
       <label class="form-label">תאריך עברי</label>
-      <div style="display:grid; grid-template-columns: 110px 1fr; gap: 8px;">
+      <div style="display:grid; grid-template-columns: 90px 1fr 1fr; gap: 8px;">
         <select id="fm-heb-day" class="hebrew-font" style="font-size: 16px;" onchange="updateHebDateDisplay()">
           <option value="">- יום -</option>
           ${HEB_DAY_LETTERS.slice(1).map((letter, i) => `<option value="${i+1}" ${f.hebDay === (i+1) ? 'selected' : ''}>${letter}</option>`).join('')}
@@ -4195,6 +4210,10 @@ function addFamilyMember(existing) {
         <select id="fm-heb-month" onchange="updateHebDateDisplay()">
           <option value="">- חודש -</option>
           ${HEBREW_MONTHS.map(m => `<option value="${m}" ${f.hebMonth === m ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+        <select id="fm-heb-year" class="hebrew-font" style="font-size: 15px;" onchange="updateHebDateDisplay()">
+          <option value="">- שנה -</option>
+          ${hebYearOpts}
         </select>
       </div>
       <div id="fm-heb-display" style="margin-top:6px; font-size:13px; color:var(--gold); font-family: 'Frank Ruhl Libre', serif;"></div>
@@ -4222,9 +4241,11 @@ function addFamilyMember(existing) {
     f.name = document.getElementById('fm-name').value.trim();
     if (!f.name) { toast('שם פרטי חובה', 'danger'); return false; }
     f.relation = document.getElementById('fm-relation').value;
+    f.gender = document.getElementById('fm-gender').value;
     f.birthday = document.getElementById('fm-birthday').value;
     f.hebDay = parseInt(document.getElementById('fm-heb-day').value) || null;
     f.hebMonth = document.getElementById('fm-heb-month').value || null;
+    f.hebYear = parseInt(document.getElementById('fm-heb-year').value) || null;
     // כולם חוגגים לפי תאריך עברי
     f.useHebrewDate = true;
     f.phone = document.getElementById('fm-phone').value.trim();
@@ -4254,8 +4275,8 @@ function addFamilyMember(existing) {
     // עדכן/הוסף יום הולדת
     let bd = State.birthdays.find(b => b.familyId === f.id);
     if (f.birthday) {
-      if (bd) { bd.name = f.name; bd.date = f.birthday; bd.hebDay = f.hebDay; bd.hebMonth = f.hebMonth; bd.useHebrewDate = true; }
-      else State.birthdays.push({ id: 'b' + f.id, name: f.name, date: f.birthday, hebDay: f.hebDay, hebMonth: f.hebMonth, useHebrewDate: true, familyId: f.id });
+      if (bd) { bd.name = f.name; bd.date = f.birthday; bd.hebDay = f.hebDay; bd.hebMonth = f.hebMonth; bd.hebYear = f.hebYear; bd.useHebrewDate = true; }
+      else State.birthdays.push({ id: 'b' + f.id, name: f.name, date: f.birthday, hebDay: f.hebDay, hebMonth: f.hebMonth, hebYear: f.hebYear, useHebrewDate: true, familyId: f.id });
     }
     saveState();
     renderView();
@@ -4272,7 +4293,13 @@ function updateHebDateDisplay() {
   if (!display) return;
   if (dayInp && monthSel && dayInp.value && monthSel.value) {
     const letter = HEB_DAY_LETTERS[parseInt(dayInp.value)] || dayInp.value;
-    display.innerHTML = `${letter} ${monthSel.value}`;
+    const yearSel = document.getElementById('fm-heb-year');
+    let yearLabel = '';
+    if (yearSel && yearSel.value) {
+      const HC = getHebcal();
+      try { yearLabel = ' ' + (HC && HC.gematriya ? HC.gematriya(parseInt(yearSel.value)) : yearSel.value); } catch (e) { yearLabel = ' ' + yearSel.value; }
+    }
+    display.innerHTML = `${letter} ${monthSel.value}${yearLabel}`;
   } else {
     display.innerHTML = '<span style="color:var(--text-muted); font-size:11px; font-family:Heebo,sans-serif;">לחץ "← עברי" להמרה אוטומטית מתאריך לועזי</span>';
   }
@@ -4290,12 +4317,25 @@ function convertGregToHeb() {
     if (!heb) { toast('שגיאה בהמרה', 'danger'); return; }
     const dayInp = document.getElementById('fm-heb-day');
     const monthSel = document.getElementById('fm-heb-month');
+    const yearSel = document.getElementById('fm-heb-year');
     if (dayInp) dayInp.value = heb.day;
     if (monthSel) {
       const HC = getHebcal();
       const engName = HC.HDate.getMonthName(heb.monthNum, heb.year);
       const hebName = ENG_MONTH_TO_HEB[engName] || heb.month;
       monthSel.value = hebName;
+    }
+    if (yearSel) {
+      // אם השנה לא קיימת ברשימה (מעל 120 שנה אחורה) - הוסף אותה
+      if (![...yearSel.options].some(o => o.value === String(heb.year))) {
+        const HC = getHebcal();
+        let label = heb.year;
+        try { if (HC && HC.gematriya) label = HC.gematriya(heb.year); } catch (e) {}
+        const opt = document.createElement('option');
+        opt.value = heb.year; opt.textContent = label;
+        yearSel.appendChild(opt);
+      }
+      yearSel.value = heb.year;
     }
     updateHebDateDisplay();
     toast(`הומר: ${heb.formatted}`, 'success');
@@ -5071,7 +5111,7 @@ function getYahrzeitHebDate(y) {
       const en = HC.HDate.getMonthName(origHeb.monthNum, origHeb.year);
       month = ENG_MONTH_TO_HEB[en] || origHeb.month;
     }
-    return { day, month, year: origHeb.year, monthNum: origHeb.monthNum };
+    return { day, month, year: y.hebYear || origHeb.year, monthNum: origHeb.monthNum };
   } catch (e) { return null; }
 }
 
@@ -5416,7 +5456,15 @@ VIEW_RENDERERS.yahrzeits = (root) => {
 };
 
 function addYahrzeit(existing, prefill) {
-  const y = existing || { id: Date.now().toString(), name: '', date: prefill?.date || '', relation: '', hebDay: null, hebMonth: null };
+  const y = existing || { id: Date.now().toString(), name: '', date: prefill?.date || '', relation: '', hebDay: null, hebMonth: null, hebYear: null };
+  // שנים עבריות לבחירה - 120 שנה אחורה מהשנה הנוכחית, בגימטריה
+  const HCy = getHebcal();
+  const curHebYear = (gregToHebrew(new Date()) || {}).year || 5786;
+  const yzHebYearOpts = Array.from({ length: 121 }, (_, i) => curHebYear - i).map(yr => {
+    let label = yr;
+    try { if (HCy && HCy.gematriya) label = HCy.gematriya(yr); } catch (e) {}
+    return `<option value="${yr}" ${y.hebYear === yr ? 'selected' : ''}>${label}</option>`;
+  }).join('');
   openModal(existing ? 'עריכת יארצייט' : 'הוספת יארצייט', `
     <div class="form-group"><label class="form-label">שם הנפטר ז"ל</label><input type="text" id="yz-name" value="${y.name||''}"></div>
     <div class="form-group"><label class="form-label">קרבה (סבא, סבתא וכו')</label><input type="text" id="yz-relation" value="${y.relation||''}"></div>
@@ -5429,7 +5477,7 @@ function addYahrzeit(existing, prefill) {
     </div>
     <div class="form-group">
       <label class="form-label">תאריך פטירה עברי</label>
-      <div style="display:grid; grid-template-columns: 110px 1fr; gap: 8px;">
+      <div style="display:grid; grid-template-columns: 90px 1fr 1fr; gap: 8px;">
         <select id="yz-heb-day" class="hebrew-font" style="font-size: 16px;" onchange="updateYzHebDateDisplay()">
           <option value="">- יום -</option>
           ${HEB_DAY_LETTERS.slice(1).map((letter, i) => `<option value="${i+1}" ${y.hebDay === (i+1) ? 'selected' : ''}>${letter}</option>`).join('')}
@@ -5437,6 +5485,10 @@ function addYahrzeit(existing, prefill) {
         <select id="yz-heb-month" onchange="updateYzHebDateDisplay()">
           <option value="">- חודש -</option>
           ${HEBREW_MONTHS.map(m => `<option value="${m}" ${y.hebMonth === m ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+        <select id="yz-heb-year" class="hebrew-font" style="font-size: 15px;" onchange="updateYzHebDateDisplay()">
+          <option value="">- שנה -</option>
+          ${yzHebYearOpts}
         </select>
       </div>
       <div id="yz-heb-display" style="margin-top:6px; font-size:13px; color:var(--gold); font-family: 'Frank Ruhl Libre', serif;"></div>
@@ -5447,6 +5499,7 @@ function addYahrzeit(existing, prefill) {
     y.relation = document.getElementById('yz-relation').value.trim();
     y.hebDay = parseInt(document.getElementById('yz-heb-day').value) || null;
     y.hebMonth = document.getElementById('yz-heb-month').value || null;
+    y.hebYear = parseInt(document.getElementById('yz-heb-year').value) || null;
     if (!y.name || !y.date) { toast('יש למלא שם ותאריך', 'danger'); return false; }
     if (!existing) State.yahrzeits.push(y);
     saveState();
@@ -5467,12 +5520,25 @@ function convertYzGregToHeb() {
     if (!heb) { toast('שגיאה בהמרה', 'danger'); return; }
     const dayInp = document.getElementById('yz-heb-day');
     const monthSel = document.getElementById('yz-heb-month');
+    const yearSel = document.getElementById('yz-heb-year');
     if (dayInp) dayInp.value = heb.day;
     if (monthSel) {
       const HC = getHebcal();
       const engName = HC.HDate.getMonthName(heb.monthNum, heb.year);
       const hebName = ENG_MONTH_TO_HEB[engName] || heb.month;
       monthSel.value = hebName;
+    }
+    if (yearSel) {
+      // אם השנה לא קיימת ברשימה (מעל 120 שנה אחורה) - הוסף אותה
+      if (![...yearSel.options].some(o => o.value === String(heb.year))) {
+        const HC = getHebcal();
+        let label = heb.year;
+        try { if (HC && HC.gematriya) label = HC.gematriya(heb.year); } catch (e) {}
+        const opt = document.createElement('option');
+        opt.value = heb.year; opt.textContent = label;
+        yearSel.appendChild(opt);
+      }
+      yearSel.value = heb.year;
     }
     updateYzHebDateDisplay();
     toast(`הומר: ${heb.formatted}`, 'success');
@@ -5489,7 +5555,13 @@ function updateYzHebDateDisplay() {
   if (!display) return;
   if (dayInp && monthSel && dayInp.value && monthSel.value) {
     const letter = HEB_DAY_LETTERS[parseInt(dayInp.value)] || dayInp.value;
-    display.innerHTML = `${letter} ${monthSel.value}`;
+    const yearSel = document.getElementById('yz-heb-year');
+    let yearLabel = '';
+    if (yearSel && yearSel.value) {
+      const HC = getHebcal();
+      try { yearLabel = ' ' + (HC && HC.gematriya ? HC.gematriya(parseInt(yearSel.value)) : yearSel.value); } catch (e) { yearLabel = ' ' + yearSel.value; }
+    }
+    display.innerHTML = `${letter} ${monthSel.value}${yearLabel}`;
   } else {
     display.innerHTML = '<span style="color:var(--text-muted); font-size:11px; font-family:Heebo,sans-serif;">לחץ "← עברי" להמרה אוטומטית מתאריך לועזי</span>';
   }
