@@ -19,8 +19,19 @@
 - גרסה אונליין מקורית שמורה ב-`index.online-backup.html`.
 - תוקן: `HDate.monthName` (סטטי, הוסר ב-hebcal v5) → `HDate.getMonthName` ב-14 מקומות. באג סמוי שהיה שובר גם עם ה-CDN.
 
-## מתוכנן — שלב 2: סנכרון Supabase
-אופליין-פירסט עם סנכרון אופציונלי. מטרה: גיבוי בענן + עדכון מרחוק. פלטפורמה: Supabase. ממתין לפרטי חיבור מהמשתמש (Project URL + anon key). מודל מוצע: מסמך State יחיד למשק-בית עם last-write-wins + חותמת זמן.
+## אחסון ופריסה
+- מתארח ב-GitHub Pages: https://shimik2545.github.io/kaplan-family/ (מאגר shimik2545/kaplan-family).
+- קבצים אישיים (.ged/.xlsx) מוחרגים דרך .gitignore ממאגר ציבורי.
+
+## שלב 2: סנכרון Supabase [הושלם 2026-07-24]
+אופליין-פירסט עם סנכרון אופציונלי. מטרה: גיבוי בענן + עדכון מרחוק.
+- Supabase project: azfazetorfokwyybdkof. טבלה `household_state` (user_id uuid PK, data jsonb, updated_at). RLS לפי auth.uid().
+- אימות: אימייל+סיסמה (Supabase Auth), אישור-מייל כבוי. anon key מוטמע (בטוח — RLS מגן).
+- ספריית supabase-js מוטמעת inline. מודל: מסמך State יחיד למשתמש, last-write-wins לפי חותמת זמן.
+- זרימה: התחברות→סנכרון; saveState→דחיפה מושהית (2.5ש); אתחול+online→סנכרון. גיבוי מקומי לפני משיכה דורסת.
+- אומת מקצה-לקצה (push/pull/RLS). המשתמש חיבר חשבון אמיתי והנתונים בענן.
+- באג קריטי שתוקן: ענן ריק היה דורס נתונים מקומיים בהתחברות ראשונה. תוקן — כלל ברזל: נתונים מקומיים לעולם לא נדרסים ע"י ענן ריק. שוחזר מגיבוי.
+- נותר: למחוק משתמש-בדיקה synctest.deleteme@example.com מלוח הבקרה של Supabase.
 
 ## Views קיימים
 home, calendar, zmanim, family, birthdays, yahrzeits, events, tasks, messages, parents, shabbat (רשימות), halacha, finance, loans, trips, ravkav (בקרוב), brachot, datelookup, settings

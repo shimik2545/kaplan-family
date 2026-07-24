@@ -11,3 +11,6 @@ index.online-backup.html
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# הגדרות סביבה מקומיות של Claude
+.claude/
