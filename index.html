@@ -195,6 +195,20 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   #view { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   #view > .view { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
   #view:not(.home-view) > .view { overflow-y: auto; display: block; }
+  /* לוח שנה במסך מלא - כל החודש נכנס ללא גלילה, שורות מתחלקות בגובה */
+  #view.fit-view > .view { overflow: hidden; display: flex; flex-direction: column; }
+  #view.fit-view .calendar-card { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #view.fit-view .calendar-card > .card-header { flex-shrink: 0; }
+  #view.fit-view .calendar-card > .calendar-legend { flex-shrink: 0; }
+  /* שורה 1 (שמות הימים) אוטומטית; שורות השבועות מתחלקות שווה בשארית הגובה */
+  #view.fit-view .calendar {
+    flex: 1;
+    min-height: 0;
+    grid-template-rows: auto repeat(var(--cal-weeks, 6), minmax(0, 1fr));
+  }
+  #view.fit-view .calendar-day,
+  #view.fit-view .calendar-day.shabbat,
+  #view.fit-view .calendar-day.holiday { min-height: 0; }
   /* שורות במסך הבית */
   .home-row-top { flex: 0 0 auto; height: 420px; max-height: 50vh; }
   .home-row-top > .card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -426,6 +440,7 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    white-space: nowrap; /* טקסט כפתור לעולם לא נשבר לשתי שורות */
     padding: 8px 16px;
     border-radius: 10px;
     border: none;
@@ -540,6 +555,37 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     margin-bottom: 20px;
   }
   .modal-title { font-size: 20px; font-weight: 700; }
+  /* תפריט שלוש-נקודות בכותרת מודל */
+  .modal-menu {
+    display: none;
+    position: absolute;
+    top: 110%;
+    left: 0;
+    z-index: 10;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 6px;
+    min-width: 190px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+  }
+  .modal-menu.show { display: block; }
+  .modal-menu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: right;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 14px;
+    padding: 9px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .modal-menu button:hover { background: var(--bg-secondary); }
 
   /* CALENDAR */
   .calendar {
@@ -578,7 +624,7 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   }
   .calendar-day.today .calendar-day-greg { color: var(--accent-light); font-weight: 700; }
   .calendar-day.shabbat { background: rgba(139, 58, 74, 0.12); }
-  .calendar-day.holiday { background: rgba(201, 169, 110, 0.12); border-color: var(--gold); }
+  .calendar-day.holiday { background: rgba(201, 169, 110, 0.12); }
   .calendar-day-top { display:flex; justify-content: space-between; align-items: baseline; }
   .calendar-day-greg { font-weight: 600; font-size: 14px; }
   .calendar-day-heb { font-size: 11px; color: var(--text-muted); font-family: 'Heebo', sans-serif; }
@@ -603,6 +649,7 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   .cal-event.birthday { background: rgba(91, 157, 127, 0.25); color: #87c4a4; }
   .cal-event.yahrzeit { background: rgba(125, 138, 163, 0.2); color: var(--text-secondary); }
   .cal-event.event { background: rgba(74, 127, 184, 0.25); color: var(--accent-light); }
+  .cal-event.task { background: rgba(139, 58, 74, 0.25); color: #d9a0ab; }
 
   /* תצוגת שבת בלוח שנה - פרשת השבוע + צאת השבת */
   .calendar-day.shabbat { min-height: 130px; }
@@ -875,7 +922,8 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     border: 1px solid var(--border);
     border-right: 3px solid var(--success);
     border-radius: 6px;
-    padding: 8px 12px;
+    /* ריווח שמאלי שמור לכפתורי עריכה/מחיקה - שלא יסתירו את הטקסט */
+    padding: 8px 12px 8px 96px;
     color: var(--text-primary);
     margin-bottom: 5px;
     position: relative;
@@ -1632,7 +1680,8 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     border: 1px solid var(--border);
     border-right: 3px solid var(--accent);
     border-radius: 10px;
-    padding: 14px 16px;
+    /* ריווח שמאלי שמור לכפתורי עריכה/מחיקה - שלא יסתירו את הטקסט */
+    padding: 14px 16px 14px 96px;
     cursor: pointer;
     transition: all 0.2s;
     position: relative;
@@ -2060,6 +2109,7 @@ const ICONS = {
   refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0115-6.7L21 8M21 3v5h-5M21 12a9 9 0 01-15 6.7L3 16M3 21v-5h5"/></svg>',
   cloud: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 01-.5-7.97 5.5 5.5 0 0110.6-1.5A4.5 4.5 0 0117 18z"/></svg>',
   lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>',
+  dots: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>',
 };
 function icon(name, size = 18) {
   const svg = ICONS[name] || '';
@@ -2298,6 +2348,7 @@ function getHolidaysFor(date) {
       sedrot: true,
       il: true,
       noMinorFast: false,
+      noModern: true, // ללא ימי זיכרון/עצמאות מודרניים (יום ז'בוטינסקי וכו')
     });
     return events.map(e => ({
       name: fixHebText(e.render('he')),
@@ -2363,6 +2414,7 @@ function getMonthHolidays(year, month) {
       candlelighting: false,
       location: new HC.Location(CONFIG.latitude, CONFIG.longitude, true, CONFIG.timezone, CONFIG.city),
       il: true,
+      noModern: true, // ללא ימי זיכרון/עצמאות מודרניים (יום ז'בוטינסקי וכו')
     });
     const map = {};
     events.forEach(e => {
@@ -2598,13 +2650,23 @@ function appConfirm(message) { return appDialog(message); }
 function appPrompt(message, defaultValue = '') { return appDialog(message, { input: true, defaultValue }); }
 
 // ============ Modal ============
-function openModal(title, content, onSave) {
+function openModal(title, content, onSave, opts) {
+  opts = opts || {};
   const overlay = document.getElementById('modal-overlay');
   const modal = document.getElementById('modal-content');
+  // תפריט אופציונלי בפינה השמאלית של הכותרת (שלוש נקודות)
+  const menuHtml = opts.menu ? `
+    <div class="modal-menu-wrap" style="position:relative;">
+      <button class="btn btn-icon" onclick="event.stopPropagation(); this.parentElement.querySelector('.modal-menu').classList.toggle('show')" title="פעולות">${icon('dots', 16)}</button>
+      <div class="modal-menu">${opts.menu}</div>
+    </div>` : '';
   modal.innerHTML = `
     <div class="modal-header">
       <div class="modal-title">${title}</div>
-      <button class="btn btn-icon" onclick="closeModal()">${icon('close', 16)}</button>
+      <div style="display:flex; align-items:center; gap:4px;">
+        ${menuHtml}
+        <button class="btn btn-icon" onclick="closeModal()">${icon('close', 16)}</button>
+      </div>
     </div>
     <div id="modal-body">${content}</div>
     <div style="display: flex; gap: 8px; margin-top: 20px; justify-content: flex-start;">
@@ -3380,7 +3442,12 @@ function updateTopbar() {
   document.getElementById('topbar-clock').textContent = time;
   const nyTime = now.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
   const nyEl = document.getElementById('topbar-clock-ny-time');
-  if (nyEl) nyEl.textContent = nyTime;
+  if (nyEl) {
+    // ציון חלק היום בארה"ב: בוקר / צהריים / ערב / לילה
+    const nyHour = parseInt(nyTime.split(':')[0], 10);
+    const nyPart = nyHour >= 5 && nyHour < 12 ? 'בוקר' : nyHour >= 12 && nyHour < 17 ? 'צהריים' : nyHour >= 17 && nyHour < 22 ? 'ערב' : 'לילה';
+    nyEl.textContent = `${nyTime} · ${nyPart}`;
+  }
   updateTopbarStats();
 }
 // מטמון יומי לסטטיסטיקות שמחייבות חישובי hebcal כבדים
@@ -3409,6 +3476,7 @@ function updateTopbarStats() {
     { id: 'birthdays', icon: 'cake',     val: _statsCache.bdayCount,    label: 'יומולדת קרוב' },
     { id: 'events',    icon: 'calendar', val: upcomingEvents.length,    label: 'אירועים' },
     { id: 'tasks',     icon: 'check',    val: openTasks.length,         label: 'משימות' },
+    { id: 'shabbat',   icon: 'shabbat',  val: (State.shabbatLists||[]).length, label: 'רשימות שבת וחג' },
   ];
   el.innerHTML = stats.map(s => `
     <div class="stat-chip" onclick="navigate('${s.id}')" title="${s.label}">
@@ -3422,18 +3490,49 @@ function invalidateStatsCache() { _statsCache.dateKey = ''; }
 setInterval(updateTopbar, 1000);
 
 // ============ View Renderer ============
+// מפתח מיקום מבני של אלמנט (שרשרת אינדקסים מהשורש) - כדי לזהות את אותו אזור אחרי בנייה מחדש
+function _structKey(node, root) {
+  const path = [];
+  while (node && node !== root) {
+    const p = node.parentNode;
+    if (!p) break;
+    path.push(Array.prototype.indexOf.call(p.children, node));
+    node = p;
+  }
+  return path.join('.');
+}
 function renderView() {
   const el = document.getElementById('view');
+  // שמירת מיקום גלילה של כל אזור נגלל + פוקוס - כדי שפעולות (סימון, חיפוש) לא יקפיצו את המסך
+  const savedScroll = {};
+  el.querySelectorAll('*').forEach(n => { if (n.scrollTop > 0) savedScroll[_structKey(n, el)] = n.scrollTop; });
+  const act = document.activeElement;
+  const focusInfo = (act && el.contains(act) && act.id) ? { id: act.id, start: act.selectionStart, end: act.selectionEnd } : null;
+
   el.innerHTML = '';
   // הוסף/הסר class לפי תצוגה - בתצוגת הבית: לא מתוח לגובה
   if (currentView === 'home') el.classList.add('home-view');
   else el.classList.remove('home-view');
+  // לוח שנה - תצוגה שנכנסת כולה במסך ללא גלילה
+  el.classList.toggle('fit-view', currentView === 'calendar');
   const v = document.createElement('div');
   v.className = 'view';
   el.appendChild(v);
   const renderer = VIEW_RENDERERS[currentView];
   if (renderer) renderer(v);
   else v.innerHTML = '<div class="card">View not found</div>';
+
+  // שחזור גלילה לפי מיקום מבני + שחזור פוקוס
+  if (Object.keys(savedScroll).length) {
+    el.querySelectorAll('*').forEach(n => {
+      const k = _structKey(n, el);
+      if (savedScroll[k] != null) n.scrollTop = savedScroll[k];
+    });
+  }
+  if (focusInfo) {
+    const n = document.getElementById(focusInfo.id);
+    if (n) { try { n.focus({ preventScroll: true }); if (focusInfo.start != null && n.setSelectionRange) n.setSelectionRange(focusInfo.start, focusInfo.end); } catch (e) {} }
+  }
 }
 
 const VIEW_RENDERERS = {};
@@ -3443,6 +3542,15 @@ VIEW_RENDERERS.home = (root) => {
   const next = getNextZman();
   const todayHolidays = getHolidaysFor(new Date());
   const reminders = getHalachaReminders();
+  // רשימות שבת/חג לתצוגה בכרטיס התזכורות: בערב שבת/חג (כל היום) או כשרשימה פעילה היום
+  let prepLists = [];
+  try {
+    const erev = getErevInfo(new Date());
+    const inHolyMode = (typeof shabbatMode !== 'undefined' && shabbatMode);
+    prepLists = (State.shabbatLists || []).filter(l =>
+      ((erev || inHolyMode) && l.activeDay === 'shabbat') || isListActiveToday(l)
+    );
+  } catch (e) { prepLists = []; }
   const upcomingBdays = getUpcomingBirthdays(60);
   const recentPastBdays = getRecentPastBirthdays(7);
   const upcomingYahrzeits = getUpcomingYahrzeits(120);
@@ -3467,7 +3575,7 @@ VIEW_RENDERERS.home = (root) => {
     <!-- שורה עליונה: כרטיס זמני היום + שעון אנלוגי + תזכורות -->
     <div class="home-row-top" style="display: grid; grid-template-columns: 1fr 1.1fr 1fr; gap: 10px;">
       <!-- כרטיס זמני היום - קומפקטי עם הזמן הבא נעוץ -->
-      <div class="card smart-clock-card" style="padding: 8px 12px;">
+      <div class="card smart-clock-card" style="padding: 8px 12px; cursor:pointer;" onclick="navigate('zmanim')" title="לחץ לזמני היום המלאים">
         ${next ? `<div class="zmanim-pinned-next">
           <span class="name">${next.name}</span>
           <span class="time">${next.time.toLocaleTimeString('he-IL', {hour:'2-digit', minute:'2-digit'})}</span>
@@ -3498,13 +3606,25 @@ VIEW_RENDERERS.home = (root) => {
           })()}
         </div>
 
-        ${todayHolidays.length > 0 ? `<div style="flex-shrink:0; margin-top:4px; padding-top:4px; border-top:1px solid var(--border);">
-          ${todayHolidays.map(h => `<div class="badge badge-gold" style="margin: 1px; font-size:9px;">${h.name}</div>`).join('')}
-        </div>` : ''}
+        ${(() => {
+          // ביום שישי - הוסף באדג' שקיעה ליד הדלקת נרות
+          const extraBadges = [];
+          if (new Date().getDay() === 5) {
+            try {
+              const zt = getZmanim() || {};
+              if (zt['שקיעה'] && zt['שקיעה'] !== '--:--') extraBadges.push(`שקיעה: ${zt['שקיעה']}`);
+            } catch (e) {}
+          }
+          const allBadges = [...todayHolidays.map(h => h.name), ...extraBadges];
+          if (allBadges.length === 0) return '';
+          return `<div style="flex-shrink:0; margin-top:6px; padding-top:6px; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:4px;">
+            ${allBadges.map(txt => `<div class="badge badge-gold" style="font-size:13px; padding:5px 10px;">${txt}</div>`).join('')}
+          </div>`;
+        })()}
       </div>
 
       <!-- שעון אנלוגי במרכז -->
-      <div class="card analog-clock-wrap">
+      <div class="card analog-clock-wrap" style="cursor:pointer;" onclick="navigate('calendar')" title="לחץ ללוח השנה">
         <div class="analog-clock">
           <svg viewBox="0 0 200 200" id="analog-svg">
             <circle cx="100" cy="100" r="95" class="clock-face"/>
@@ -3520,7 +3640,7 @@ VIEW_RENDERERS.home = (root) => {
         <div class="analog-date-greg">${new Date().toLocaleDateString('he-IL', {weekday:'long', day:'numeric', month:'long'})}</div>
       </div>
 
-      <!-- תזכורות הלכתיות -->
+      <!-- תזכורות הלכתיות + רשימות ערב שבת/חג -->
       <div class="card" style="display:flex; flex-direction:column;">
         <div class="card-title">${icon('book')} תזכורות יומיות</div>
         <div style="margin-top: 6px; flex: 1; overflow-y: auto;">
@@ -3531,7 +3651,23 @@ VIEW_RENDERERS.home = (root) => {
                 <div class="list-item-subtitle">${r.desc}</div>
               </div>
             </div>
-          `).join('') : '<div class="empty-state" style="padding:14px 8px;">אין תזכורות מיוחדות היום</div>'}
+          `).join('') : (prepLists.length === 0 ? '<div class="empty-state" style="padding:14px 8px;">אין תזכורות מיוחדות היום</div>' : '')}
+          ${prepLists.map(list => {
+            const items = list.items || [];
+            const doneCount = items.filter(i => i.done).length;
+            return `
+            <div class="subheading" style="margin-top:10px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="navigate('shabbat')">
+              <span>${icon('shabbat', 13)} ${esc(list.name)}</span>
+              <span style="font-weight:400; color:var(--text-muted);" data-sl-count="${list.id}">${doneCount}/${items.length}</span>
+            </div>
+            ${items.length === 0 ? '<div style="font-size:11px; color:var(--text-muted); padding:2px 4px;">אין פריטים ברשימה</div>' :
+              items.map((it, idx) => `
+                <div class="check-item ${it.done ? 'done' : ''}" style="padding:4px 4px;" data-sl-item="${list.id}" data-sl-idx="${idx}" onclick="toggleShabbatItem('${list.id}',${idx})">
+                  <input type="checkbox" ${it.done ? 'checked' : ''}>
+                  <span class="check-text" style="font-size:12px;">${esc(it.text)}</span>
+                </div>
+              `).join('')}`;
+          }).join('')}
         </div>
       </div>
     </div>
@@ -3804,13 +3940,13 @@ VIEW_RENDERERS.calendar = (root) => {
             const greg = hebrewToGreg(ty, eng, hebDay);
             if (greg && greg.getFullYear() === calYear && greg.getMonth() === calMonth) {
               const realAge = ty - new HC.HDate(orig).getFullYear();
-              addEv(calYear, calMonth, greg.getDate(), 'birthday', `${b.name} (${realAge})`);
+              addEv(calYear, calMonth, greg.getDate(), 'birthday', `${esc(b.name)} (${realAge})`);
             }
           } catch(e){}
         }
       } else if (orig.getMonth() === calMonth) {
         const age = calYear - orig.getFullYear();
-        addEv(calYear, calMonth, orig.getDate(), 'birthday', `${b.name} (${age})`);
+        addEv(calYear, calMonth, orig.getDate(), 'birthday', `${esc(b.name)} (${age})`);
       }
     } catch (e) {}
   });
@@ -3839,7 +3975,16 @@ VIEW_RENDERERS.calendar = (root) => {
   State.events.forEach(e => {
     const d = new Date(e.date);
     if (d.getFullYear() === calYear && d.getMonth() === calMonth) {
-      addEv(calYear, calMonth, d.getDate(), 'event', e.title);
+      addEv(calYear, calMonth, d.getDate(), 'event', esc(e.title));
+    }
+  });
+
+  // משימות עם תאריך יעד - מוצגות בלוח החודשי (משימות פתוחות בלבד)
+  State.tasks.forEach(t => {
+    if (!t.dueDate || t.done) return;
+    const d = new Date(t.dueDate);
+    if (d.getFullYear() === calYear && d.getMonth() === calMonth) {
+      addEv(calYear, calMonth, d.getDate(), 'task', esc(t.title));
     }
   });
 
@@ -3902,12 +4047,18 @@ VIEW_RENDERERS.calendar = (root) => {
     if (midHeb) {
       const engName = HC.HDate.getMonthName(midHeb.monthNum, midHeb.year);
       const hebMonthName = ENG_MONTH_TO_HEB[engName] || midHeb.month;
-      hebMonthLabel = `${hebMonthName} ${midHeb.year}`;
+      // שנה עברית באותיות (תשפ"ו) ולא במספר (5786)
+      let yearLabel = midHeb.year;
+      try { if (HC.gematriya) yearLabel = HC.gematriya(midHeb.year); } catch (e) {}
+      hebMonthLabel = `${hebMonthName} ${yearLabel}`;
     }
   } catch(e) {}
 
+  // מספר שורות שבועות בחודש - לחלוקת גובה שווה בתצוגת מסך מלא
+  const calWeeks = Math.ceil((startDow + lastDay.getDate()) / 7);
+
   root.innerHTML = `
-    <div class="card">
+    <div class="card calendar-card">
       <div class="card-header" style="margin-bottom: 8px;">
         <div style="display: flex; align-items: center; gap: 14px;">
           <button class="btn btn-icon" onclick="changeMonth(-1)" title="חודש קודם">${icon('arrowRight', 16)}</button>
@@ -3919,8 +4070,8 @@ VIEW_RENDERERS.calendar = (root) => {
         </div>
         <button class="btn" onclick="goToday()">חזור להיום</button>
       </div>
-      <div class="calendar">${daysHtml}</div>
-      <div style="display: flex; gap: 16px; margin-top: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted);">
+      <div class="calendar" style="--cal-weeks:${calWeeks};">${daysHtml}</div>
+      <div class="calendar-legend" style="display: flex; gap: 16px; margin-top: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted);">
         <div><span style="display:inline-block; width:10px; height:10px; background: var(--accent); border-radius:2px; vertical-align:middle;"></span> היום</div>
         <div><span style="display:inline-block; width:10px; height:10px; background: rgba(139, 58, 74, 0.5); border-radius:2px; vertical-align:middle;"></span> שבת</div>
         <div><span style="display:inline-block; width:10px; height:10px; background: rgba(201, 169, 110, 0.5); border-radius:2px; vertical-align:middle;"></span> חג</div>
@@ -4034,20 +4185,17 @@ function showDayDetails(y, m, d) {
       `).join('')}
     </div>
 
-    <!-- כפתורי הוספה לתאריך זה -->
-    <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
-      <div class="subheading" style="margin-bottom: 10px;">הוסף לתאריך זה</div>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-        <button class="btn" onclick="addOnDate('event', '${dateStr}')">${icon('list', 14)} אירוע</button>
-        <button class="btn" onclick="addOnDate('task', '${dateStr}')">${icon('check', 14)} משימה</button>
-        <button class="btn" onclick="addOnDate('birthday', '${dateStr}')">${icon('cake', 14)} יום הולדת</button>
-        <button class="btn" onclick="addOnDate('yahrzeit', '${dateStr}')">${icon('candle', 14)} יארצייט</button>
-        <button class="btn" onclick="addOnDate('trip', '${dateStr}')">${icon('briefcase', 14)} טיול</button>
-        <button class="btn" onclick="addOnDate('shabbatList', '${dateStr}')">${icon('shabbat', 14)} רשימה לתאריך</button>
-      </div>
-    </div>
   `;
-  openModal('פרטי תאריך', content, () => true);
+  // תפריט "הוסף לתאריך זה" - נפתח מכפתור שלוש הנקודות בכותרת
+  const addMenu = `
+    <button onclick="addOnDate('event', '${dateStr}')">${icon('list', 14)} אירוע</button>
+    <button onclick="addOnDate('task', '${dateStr}')">${icon('check', 14)} משימה</button>
+    <button onclick="addOnDate('birthday', '${dateStr}')">${icon('cake', 14)} יום הולדת</button>
+    <button onclick="addOnDate('yahrzeit', '${dateStr}')">${icon('candle', 14)} יארצייט</button>
+    <button onclick="addOnDate('trip', '${dateStr}')">${icon('briefcase', 14)} טיול</button>
+    <button onclick="addOnDate('shabbatList', '${dateStr}')">${icon('shabbat', 14)} רשימה לתאריך</button>
+  `;
+  openModal('פרטי תאריך', content, () => true, { menu: addMenu });
   document.getElementById('modal-save').style.display = 'none';
 }
 
@@ -4189,9 +4337,12 @@ VIEW_RENDERERS.family = (root) => {
             const p2 = fam.parent2Id ? State.family.find(m => m.id === fam.parent2Id) : null;
             const children = (fam.childrenIds || []).map(cid => State.family.find(m => m.id === cid)).filter(Boolean);
             const parentsLine = [p1, p2].filter(Boolean).map(p => highlightMatch(p.name, q)).join(' ו');
+            // כששם המשפחה זהה לשמות ההורים - לא מציגים אותו פעמיים
+            const rawParents = [p1, p2].filter(Boolean).map(p => p.name).join(' ו');
+            const showFamName = (fam.name || '').trim() && (fam.name || '').trim() !== rawParents.trim();
             return `
               <div class="family-unit-card" onclick="openFamilyDetailsModal('${fam.id}')">
-                <div class="family-unit-card-name">${highlightMatch(fam.name || 'משפחה', q)}</div>
+                ${showFamName ? `<div class="family-unit-card-name">${highlightMatch(fam.name, q)}</div>` : ''}
                 <div class="family-unit-card-parents">${parentsLine || '<span style="color:var(--text-muted); font-size:13px; font-weight:400;">ללא הורים מוגדרים</span>'}</div>
                 <div class="family-unit-card-children">${icon('users', 12)} ${children.length} ${children.length === 1 ? 'ילד' : 'ילדים'}</div>
                 <div class="family-unit-card-actions">
@@ -4447,6 +4598,17 @@ function updateHebDateDisplay() {
       try { yearLabel = ' ' + (HC && HC.gematriya ? HC.gematriya(parseInt(yearSel.value)) : yearSel.value); } catch (e) { yearLabel = ' ' + yearSel.value; }
     }
     display.innerHTML = `${letter} ${monthSel.value}${yearLabel}`;
+    // המרה אוטומטית ללועזי - כשנבחרו יום+חודש+שנה, מלא את שדה התאריך הלועזי מיד
+    const dateInp = document.getElementById('fm-birthday');
+    if (yearSel && yearSel.value && dateInp) {
+      const yr = parseInt(yearSel.value);
+      const eng = resolveAdar(HEB_MONTH_TO_ENG[monthSel.value] || monthSel.value, yr);
+      const greg = hebrewToGreg(yr, eng, parseInt(dayInp.value));
+      if (greg) {
+        dateInp.value = greg.getFullYear() + '-' + String(greg.getMonth() + 1).padStart(2, '0') + '-' + String(greg.getDate()).padStart(2, '0');
+        display.innerHTML += ` <span style="color:var(--text-secondary); font-family:Heebo,sans-serif; font-size:12px;">= ${greg.toLocaleDateString('he-IL')}</span>`;
+      }
+    }
   } else {
     display.innerHTML = '<span style="color:var(--text-muted); font-size:11px; font-family:Heebo,sans-serif;">לחץ "← עברי" להמרה אוטומטית מתאריך לועזי</span>';
   }
@@ -5562,15 +5724,47 @@ VIEW_RENDERERS.birthdays = (root) => {
   `;
 };
 
+// בהקלדת שם - אם זה בן משפחה קיים עם תאריך לידה, מלא אותו אוטומטית
+function onBdNameChange() {
+  const nm = (document.getElementById('bd-name').value || '').trim();
+  const m = State.family.find(x => (x.name || '').trim() === nm);
+  const d = document.getElementById('bd-date');
+  if (m && m.birthday && d && !d.value) d.value = m.birthday;
+}
 function addBirthday(existing, prefill) {
   const b = existing || { id: Date.now().toString(), name: '', date: prefill?.date || '' };
+  const nameOpts = State.family.map(m => `<option value="${esc(m.name)}">`).join('');
   openModal(existing ? 'עריכת יום הולדת' : 'הוספת יום הולדת', `
-    <div class="form-group"><label class="form-label">שם</label><input type="text" id="bd-name" value="${esc(b.name)}"></div>
+    <div class="form-group"><label class="form-label">שם (בחר בן משפחה או הקלד שם חופשי)</label>
+      <input type="text" id="bd-name" value="${esc(b.name)}" list="bd-name-list" onchange="onBdNameChange()" oninput="onBdNameChange()">
+      <datalist id="bd-name-list">${nameOpts}</datalist>
+    </div>
     <div class="form-group"><label class="form-label">תאריך לידה</label><input type="date" id="bd-date" value="${b.date}"></div>
   `, () => {
     b.name = document.getElementById('bd-name').value.trim();
     b.date = document.getElementById('bd-date').value;
     if (!b.name || !b.date) { toast('יש למלא הכל', 'danger'); return false; }
+    // אם השם הוא בן משפחה קיים - שייך את תאריך הלידה אליו (רשומה מקושרת, לא כפולה)
+    const member = !existing ? State.family.find(m => (m.name || '').trim() === b.name) : null;
+    if (member) {
+      member.birthday = b.date;
+      let hebFields = {};
+      try {
+        const h = gregToHebrew(new Date(b.date));
+        if (h) {
+          const en = getHebcal().HDate.getMonthName(h.monthNum, h.year);
+          hebFields = { hebDay: h.day, hebMonth: ENG_MONTH_TO_HEB[en] || h.month, hebYear: h.year };
+        }
+      } catch (e) {}
+      let linked = State.birthdays.find(x => x.familyId === member.id);
+      if (linked) Object.assign(linked, { name: member.name, date: b.date, useHebrewDate: true }, hebFields);
+      else State.birthdays.push(Object.assign({ id: 'b' + member.id, name: member.name, date: b.date, useHebrewDate: true, familyId: member.id }, hebFields));
+      if (typeof invalidateStatsCache === 'function') invalidateStatsCache();
+      saveState();
+      renderView();
+      toast('תאריך הלידה שויך ל' + member.name, 'success');
+      return;
+    }
     if (!existing) State.birthdays.push(b);
     saveState();
     renderView();
@@ -5747,6 +5941,17 @@ function updateYzHebDateDisplay() {
       try { yearLabel = ' ' + (HC && HC.gematriya ? HC.gematriya(parseInt(yearSel.value)) : yearSel.value); } catch (e) { yearLabel = ' ' + yearSel.value; }
     }
     display.innerHTML = `${letter} ${monthSel.value}${yearLabel}`;
+    // המרה אוטומטית ללועזי - כשנבחרו יום+חודש+שנה, מלא את שדה התאריך הלועזי מיד
+    const dateInp = document.getElementById('yz-date');
+    if (yearSel && yearSel.value && dateInp) {
+      const yr = parseInt(yearSel.value);
+      const eng = resolveAdar(HEB_MONTH_TO_ENG[monthSel.value] || monthSel.value, yr);
+      const greg = hebrewToGreg(yr, eng, parseInt(dayInp.value));
+      if (greg) {
+        dateInp.value = greg.getFullYear() + '-' + String(greg.getMonth() + 1).padStart(2, '0') + '-' + String(greg.getDate()).padStart(2, '0');
+        display.innerHTML += ` <span style="color:var(--text-secondary); font-family:Heebo,sans-serif; font-size:12px;">= ${greg.toLocaleDateString('he-IL')}</span>`;
+      }
+    }
   } else {
     display.innerHTML = '<span style="color:var(--text-muted); font-size:11px; font-family:Heebo,sans-serif;">לחץ "← עברי" להמרה אוטומטית מתאריך לועזי</span>';
   }
@@ -6246,7 +6451,20 @@ async function addShabbatItem(listId, isPermanent) {
 }
 function toggleShabbatItem(listId, idx) {
   const list = State.shabbatLists.find(l => l.id === listId);
-  if (list && list.items[idx]) { list.items[idx].done = !list.items[idx].done; saveState(); renderView(); renderActiveListDrawer(); }
+  if (!list || !list.items[idx]) return;
+  const done = !list.items[idx].done;
+  list.items[idx].done = done;
+  saveState();
+  renderActiveListDrawer();
+  // במסך שבת הייעודי - רינדור מלא (הגלילה נשמרת ב-renderView); אחרת עדכון במקום (מונע קפיצת המסך והשעון)
+  if (currentView === 'shabbat') { renderView(); return; }
+  const node = document.querySelector(`.check-item[data-sl-item="${listId}"][data-sl-idx="${idx}"]`);
+  if (!node) { renderView(); return; }
+  node.classList.toggle('done', done);
+  const cb = node.querySelector('input[type=checkbox]');
+  if (cb) cb.checked = done;
+  const doneCount = list.items.filter(i => i.done).length;
+  document.querySelectorAll(`[data-sl-count="${listId}"]`).forEach(el => { el.textContent = `${doneCount}/${list.items.length}`; });
 }
 async function deleteShabbatItem(listId, idx) {
   if (!requireAdmin(() => deleteShabbatItem(listId, idx))) return;
