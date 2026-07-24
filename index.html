@@ -2012,6 +2012,9 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
 </head>
 <body>
 
+<!-- רצועת "יצאה גרסה חדשה — רענן עכשיו". יושבת מעל התוכן ודוחפת אותו מטה. -->
+<div id="update-banner-root"></div>
+
 <div class="app">
   <!-- SIDEBAR (overlay drawer) -->
   <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="hideSidebar()"></div>
@@ -2066,6 +2069,70 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   <div style="width:48px; height:48px; border:3px solid var(--border); border-top-color:var(--gold); border-radius:50%; animation: spin 0.9s linear infinite;"></div>
 </div>
 <style>@keyframes spin { to { transform:rotate(360deg); } }</style>
+
+<!-- ===== באנר "יצאה גרסה חדשה — רענן עכשיו" ===== -->
+<style>
+  /* פריסה: הבאנר דוחף את התוכן מטה (לא fixed מעל הכותרת). */
+  body { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+  .app { flex: 1 1 auto; min-height: 0; height: auto; }
+  .main { height: 100%; }
+
+  #update-banner-root { flex: 0 0 auto; z-index: 150; }
+  #update-banner-root:empty { display: none; }
+
+  .update-banner {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--gold);
+    background: linear-gradient(180deg, rgba(201,169,110,0.15), rgba(201,169,110,0.05));
+    box-shadow: 0 2px 14px rgba(0,0,0,0.28);
+  }
+  .update-banner__icon-circle {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; flex-shrink: 0;
+    border-radius: 50%;
+    background: rgba(201,169,110,0.18);
+    color: var(--gold);
+  }
+  .update-banner__text { min-width: 0; flex: 1; }
+  .update-banner__title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+  .update-banner__sub { font-size: 11px; color: var(--text-secondary); margin-top: 1px; }
+  .update-banner__btn {
+    flex-shrink: 0; cursor: pointer; border: none;
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-family: inherit; font-size: 13px; font-weight: 700;
+    color: #0b1220; background: var(--gold);
+    transition: background .15s ease, transform .1s ease;
+  }
+  .update-banner__btn:hover { background: var(--gold-light); }
+  .update-banner__btn:active { transform: scale(.97); }
+  .update-banner__spinner {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; flex-shrink: 0; color: var(--gold);
+  }
+  .update-banner__spinner svg { animation: spin 0.9s linear infinite; }
+
+  .update-banner--success {
+    background: linear-gradient(180deg, rgba(91,157,127,0.16), rgba(91,157,127,0.05));
+    border-bottom-color: var(--success);
+  }
+  .update-banner__icon-circle--success { background: rgba(91,157,127,0.2); color: var(--success); }
+  .update-banner__success-text { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+
+  @keyframes ub-drop-in      { from { opacity: 0; transform: translateY(-100%); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes ub-slide-up-out { from { opacity: 1; transform: translateY(0); }    to { opacity: 0; transform: translateY(-100%); } }
+  @keyframes ub-swap-in      { from { opacity: 0; transform: translateY(8px); }   to { opacity: 1; transform: none; } }
+  .ub-drop-in      { animation: ub-drop-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .ub-slide-up-out { animation: ub-slide-up-out 280ms ease-in both; }
+  .ub-swap         { animation: ub-swap-in 380ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ub-drop-in, .ub-slide-up-out, .ub-swap { animation: none !important; }
+    .update-banner__spinner svg { animation: none !important; }
+  }
+</style>
 
 <!-- TOAST -->
 <div class="toast-container" id="toast-container"></div>
@@ -2129,6 +2196,10 @@ const CONFIG = {
   notificationsEnabled: true,
 };
 
+// גרסת האפליקציה — מודבקת לתוך ה-bundle. הבאנר "יצאה גרסה חדשה" משווה אותה
+// לגרסה שבשרת (version.json). בכל פריסה חדשה — להעלות את המספר גם כאן וגם ב-version.json.
+const APP_VERSION = 'V01.00.00';
+
 // ============ ICONS (SVG, line style) ============
 const ICONS = {
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12L12 4l9 8M5 10v10h14V10"/></svg>',
@@ -2139,6 +2210,7 @@ const ICONS = {
   candle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c1 1.5-1 2.5 0 4 1 1.5 2-.5 0-4z"/><rect x="9" y="9" width="6" height="11" rx="1"/><path d="M7 21h10"/></svg>',
   list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h11"/></svg>',
+  checkCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>',
   bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M14 21a2 2 0 01-4 0"/></svg>',
   mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
   shabbat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v3M5 6c-1 1.5 1 2.5 0 4M5 10v10M3 21h4M19 3v3M19 6c-1 1.5 1 2.5 0 4M19 10v10M17 21h4M9 21h6"/></svg>',
@@ -3791,7 +3863,9 @@ VIEW_RENDERERS.home = (root) => {
               <span style="font-weight:400; color:var(--text-muted);" data-sl-count="${list.id}">${doneCount}/${items.length}</span>
             </div>
             ${items.length === 0 ? '<div style="font-size:11px; color:var(--text-muted); padding:2px 4px;">אין פריטים ברשימה</div>' :
-              items.map((it, idx) => `
+              items.map((it, idx) => ({ it, idx }))
+                .sort((a, b) => (a.it.done ? 1 : 0) - (b.it.done ? 1 : 0))
+                .map(({ it, idx }) => `
                 <div class="check-item ${it.done ? 'done' : ''}" style="padding:4px 4px;" data-sl-item="${list.id}" data-sl-idx="${idx}" onclick="toggleShabbatItem('${list.id}',${idx})">
                   <input type="checkbox" ${it.done ? 'checked' : ''}>
                   <span class="check-text" style="font-size:12px;">${esc(it.text)}</span>
@@ -6461,7 +6535,7 @@ VIEW_RENDERERS.shabbat = (root) => {
               </div>
             </div>
             ${perm.length > 0 ? `<div class="subheading" style="margin-top:6px; font-size:11px;">קבועים</div>` : ''}
-            ${perm.map((it, idx) => {
+            ${perm.slice().sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0)).map((it, idx) => {
               const realIdx = list.items.indexOf(it);
               return `
               <div class="check-item ${it.done?'done':''}" onclick="toggleShabbatItem('${list.id}', ${realIdx})">
@@ -6471,7 +6545,7 @@ VIEW_RENDERERS.shabbat = (root) => {
               </div>
             `}).join('')}
             ${temp.length > 0 ? `<div class="subheading" style="margin-top:6px; font-size:11px;">זמניים (יימחקו אחרי האיפוס)</div>` : ''}
-            ${temp.map((it, idx) => {
+            ${temp.slice().sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0)).map((it, idx) => {
               const realIdx = list.items.indexOf(it);
               return `
               <div class="check-item ${it.done?'done':''}" onclick="toggleShabbatItem('${list.id}', ${realIdx})">
@@ -6621,6 +6695,15 @@ function toggleShabbatItem(listId, idx) {
   if (cb) cb.checked = done;
   const doneCount = list.items.filter(i => i.done).length;
   document.querySelectorAll(`[data-sl-count="${listId}"]`).forEach(el => { el.textContent = `${doneCount}/${list.items.length}`; });
+  // סדר מחדש במקום: פריטים שבוצעו יורדים לתחתית הרשימה (בלי לרענן את המסך/השעון)
+  const nodes = Array.from(document.querySelectorAll(`.check-item[data-sl-item="${listId}"]`));
+  if (nodes.length > 1) {
+    const parent = nodes[0].parentNode;
+    const marker = nodes[nodes.length - 1].nextSibling;
+    const undone = nodes.filter(n => !n.classList.contains('done'));
+    const doneNodes = nodes.filter(n => n.classList.contains('done'));
+    undone.concat(doneNodes).forEach(n => parent.insertBefore(n, marker));
+  }
 }
 async function deleteShabbatItem(listId, idx) {
   if (!requireAdmin(() => deleteShabbatItem(listId, idx))) return;
@@ -8201,6 +8284,118 @@ function cloudCardHtml() {
 function updateCloudUI() {
   if (currentView === 'settings') renderView();
 }
+
+// ============================================================
+//  באנר "יצאה גרסה חדשה — רענן עכשיו"
+//  מזהה משתמש שתקוע על גרסה ישנה, ומזמין אותו לרענן. רענון רק בלחיצה.
+//  אין כפתור סגירה — הדרך היחידה להעלים את הרצועה היא לרענן.
+// ============================================================
+(function () {
+  const POLL_MS = 30000;
+  const VERSION_URL = 'version.json';
+  const SUCCESS_KEY = 'beithaim_update_refreshed'; // דגל הצלחה שנקרא אחרי הרענון
+  const FORCED_ACK_KEY = 'beithaim_forced_ack';    // אישור לדחיפה-ידנית, לכל session
+  let phase = 'hidden'; // hidden | visible | refreshing | success | successClosing
+  let forced = false;
+  let successTimers = [];
+
+  function el() { return document.getElementById('update-banner-root'); }
+
+  function render() {
+    const host = el();
+    if (!host) return;
+    if (phase === 'hidden') { host.innerHTML = ''; return; }
+
+    if (phase === 'success' || phase === 'successClosing') {
+      const anim = phase === 'successClosing' ? 'ub-slide-up-out' : 'ub-drop-in';
+      host.innerHTML =
+        '<div class="update-banner update-banner--success ' + anim + '" dir="rtl" role="status">' +
+          '<span class="update-banner__icon-circle update-banner__icon-circle--success">' + icon('checkCircle', 18) + '</span>' +
+          '<span class="update-banner__success-text">המערכת עודכנה לגרסה האחרונה</span>' +
+        '</div>';
+      return;
+    }
+
+    const refreshing = phase === 'refreshing';
+    host.innerHTML =
+      '<div class="update-banner ub-drop-in" dir="rtl">' +
+        // אייקון סטטי — לא מסתובב. הספינר היחיד במסך הוא של הכפתור.
+        '<span class="update-banner__icon-circle">' + icon('refresh', 18) + '</span>' +
+        '<div class="update-banner__text">' +
+          '<div class="update-banner__title">יצאה גרסה חדשה של המערכת</div>' +
+          '<div class="update-banner__sub">רענן כדי לקבל את הגרסה האחרונה.</div>' +
+        '</div>' +
+        (refreshing
+          ? '<span class="update-banner__spinner ub-swap" role="status" aria-label="מרענן">' + icon('refresh', 20) + '</span>'
+          : '<button type="button" class="update-banner__btn" id="update-banner-refresh">רענן עכשיו</button>') +
+      '</div>';
+
+    if (!refreshing) {
+      const btn = document.getElementById('update-banner-refresh');
+      if (btn) btn.addEventListener('click', handleRefresh);
+    }
+  }
+
+  function setPhase(next) { phase = next; render(); }
+
+  function handleRefresh() {
+    // דחיפה-ידנית: מאשרים מקומית כדי שלא תחזור מיד באותו session
+    if (forced) { try { sessionStorage.setItem(FORCED_ACK_KEY, '1'); } catch (e) {} }
+    setPhase('refreshing');
+    try { sessionStorage.setItem(SUCCESS_KEY, '1'); } catch (e) {}
+    // חובה location.reload (לא רענון-רך) — זה מה שבאמת מביא bundle חדש.
+    setTimeout(function () { window.location.reload(); }, 200);
+  }
+
+  async function check() {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    if (phase === 'refreshing' || phase === 'success' || phase === 'successClosing') return;
+    try {
+      // מנטרל מטמון-דפדפן וגם מטמון-CDN (פרמטר זמן) — אחרת התשובה תיתקע על גרסה ישנה.
+      const res = await fetch(VERSION_URL + '?t=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data || !data.version) return;
+
+      let isForced = data.forced === true;
+      if (isForced) { try { if (sessionStorage.getItem(FORCED_ACK_KEY)) isForced = false; } catch (e) {} }
+      const isStale = data.version !== APP_VERSION;
+      forced = isForced;
+
+      if (!isForced && !isStale) return;
+      if (phase === 'refreshing' || phase === 'success' || phase === 'successClosing') return;
+      setPhase('visible');
+    } catch (e) { /* בדיקה לא חוסמת */ }
+  }
+
+  function initUpdateBanner() {
+    // 1) הודעת-הצלחה אחרי הרענון
+    try {
+      if (sessionStorage.getItem(SUCCESS_KEY)) {
+        sessionStorage.removeItem(SUCCESS_KEY);
+        setPhase('success');
+        successTimers.push(setTimeout(function () { setPhase('successClosing'); }, 4200));
+        successTimers.push(setTimeout(function () { setPhase('hidden'); }, 4500));
+      }
+    } catch (e) {}
+
+    // 2) מצב תצוגה-מקדימה — ?previewVersionBanner=1 מכריח את הבאנר
+    try {
+      if (new URLSearchParams(window.location.search).get('previewVersionBanner') === '1') {
+        if (phase !== 'success' && phase !== 'successClosing') setPhase('visible');
+      }
+    } catch (e) {}
+
+    // 3) בדיקה מחזורית + בכל חזרה לטאב
+    check();
+    setInterval(check, POLL_MS);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') check();
+    });
+  }
+
+  initUpdateBanner();
+})();
 
 // רישום Service Worker — מאפשר לאפליקציה לעבוד אופליין כשמותקנת במסך הבית (רק ב-https)
 if ('serviceWorker' in navigator && location.protocol === 'https:') {

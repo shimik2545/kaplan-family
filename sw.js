@@ -37,6 +37,9 @@ self.addEventListener('fetch', (e) => {
 
   // Supabase — תמיד רשת, בלי מטמון
   if (url.hostname.endsWith('supabase.co')) return;
+  // version.json — תמיד רשת, לעולם לא מטמון.
+  // בלי זה, המטמון (cache-first) היה מקפיא את הגרסה על ערך ישן ובאנר-העדכון לא היה מופיע לאף אחד.
+  if (url.pathname.endsWith('version.json')) return;
   // מקורות חיצוניים אחרים — התנהגות רגילה
   if (url.origin !== location.origin) return;
 
