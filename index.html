@@ -7366,10 +7366,12 @@ function applyStateData(data) {
   Object.keys(data).forEach(k => { if (k in State) State[k] = data[k]; });
   saveState();
 }
-function localIsEmpty() {
+function dataIsEmpty(d) {
+  if (!d || typeof d !== 'object') return true;
   const arrs = ['family','birthdays','yahrzeits','events','tasks','messages','parentMessages','shabbatLists','finance','loans','trips','families'];
-  return arrs.every(k => !Array.isArray(State[k]) || State[k].length === 0);
+  return arrs.every(k => !Array.isArray(d[k]) || d[k].length === 0);
 }
+function localIsEmpty() { return dataIsEmpty(collectStateData()); }
 
 function initCloud() {
   try {
@@ -7407,22 +7409,30 @@ async function cloudPush(reason) {
   return true;
 }
 
-// סנכרון מלא: מיישב בין מקומי לענן לפי חותמת זמן (המאוחר מנצח), עם גיבוי לפני דריסה
+// סנכרון מלא: מיישב בין מקומי לענן. כלל ברזל: נתונים מקומיים לעולם לא נדרסים על ידי ענן ריק.
 async function cloudSyncNow(silent) {
   if (!sb || !cloudSession) { if (!silent) toast('אינך מחובר', 'warning'); return; }
   const remote = await cloudPull();
   const m = getCloudMeta();
-  if (!remote) {
-    if (await cloudPush('העלאה ראשונית') && !silent) toast('הנתונים גובו לענן', 'success');
+  const localEmpty = localIsEmpty();
+  const remoteEmpty = !remote || dataIsEmpty(remote.data);
+
+  // ענן ריק — לעולם לא מושכים ממנו. אם יש נתונים מקומיים, מעלים אותם.
+  if (remoteEmpty) {
+    if (await cloudPush(localEmpty ? 'העלאה ראשונית' : 'גיבוי הנתונים לענן') && !silent) {
+      toast(localEmpty ? 'מחובר לענן' : 'הנתונים גובו לענן', 'success');
+    }
     return;
   }
-  if (localIsEmpty()) {
+  // בענן יש נתונים, מקומי ריק — מושכים מהענן.
+  if (localEmpty) {
     makeAutoBackup('לפני משיכה מהענן');
     applyStateData(remote.data || {});
     m.lastServerUpdatedAt = remote.updated_at; setCloudMeta(m);
     if (!silent) toast('הנתונים נטענו מהענן', 'success');
     renderView(); return;
   }
+  // בשני הצדדים יש נתונים — המאוחר לפי חותמת זמן מנצח (עם גיבוי לפני דריסה).
   const localT = m.localUpdatedAt ? new RealDate(m.localUpdatedAt).getTime() : 0;
   const remoteT = remote.updated_at ? new RealDate(remote.updated_at).getTime() : 0;
   if (remoteT > localT) {
