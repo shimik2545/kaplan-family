@@ -1075,6 +1075,13 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     background: var(--bg-tertiary); padding: 2px 8px; border-radius: 8px;
     white-space: nowrap;
   }
+  /* וריאנט ימי הולדת - אותו עיצוב כמו יארצייט בגוון ירוק */
+  .yz-widget-card.bd {
+    background: linear-gradient(to left, rgba(91,157,127,0.08), var(--bg-secondary));
+    border-right-color: #5b9d7f;
+  }
+  .yz-widget-card.bd .yz-widget-date { color: #87c4a4; }
+  .yz-widget-card.bd .yz-widget-cd { color: #87c4a4; }
 
   /* ============ עץ משפחתי - קומפקטי ============ */
   .ftree-wrap {
@@ -4135,20 +4142,15 @@ VIEW_RENDERERS.home = (root) => {
           <button class="btn btn-sm" onclick="navigate('birthdays')">←</button>
         </div>
         <div>
-          ${(upcomingBdays.length + recentPastBdays.length) > 0 ? [...recentPastBdays.slice().sort((a,b) => b.daysSince - a.daysSince), ...upcomingBdays].slice(0, 8).map(b => {
-            const isPast = b.isPast === true;
-            const pastStyle = isPast ? 'opacity: 0.7; border-right-color: var(--text-muted); background: linear-gradient(to left, rgba(125,138,163,0.06), var(--bg-secondary));' : '';
-            const cdStyle = isPast ? 'color: var(--text-muted); font-style: italic;' : '';
-            const cdText = isPast
-              ? `לפני ${b.daysSince}י׳`
-              : (b.daysUntil === 0 ? 'היום!' : `בעוד ${b.daysUntil}י׳`);
-            return `
-            <div class="birthday-card" style="${pastStyle}">
-              <div class="birthday-countdown" style="${cdStyle}">${cdText}</div>
-              <div class="birthday-name" ${isPast ? 'style="color: var(--text-secondary);"' : ''}>${esc(b.name)}${b.age ? ` · ${b.age}` : ''}</div>
-              <div class="birthday-date">${b.date.toLocaleDateString('he-IL', {day:'numeric', month:'long'})}</div>
+          ${(() => { const wk = upcomingBdays.filter(b => b.daysUntil !== null && b.daysUntil <= 31); return wk.length > 0 ? wk.slice(0, 8).map(b => `
+            <div class="yz-widget-card bd">
+              <div class="yz-widget-name">${esc(b.name)}${b.age ? ` · ${b.age}` : ''}</div>
+              <div class="yz-widget-row">
+                <span class="yz-widget-date">${b.date.toLocaleDateString('he-IL', {day:'numeric', month:'long'})}</span>
+                <span class="yz-widget-cd">${b.daysUntil === 0 ? 'היום' : `בעוד ${b.daysUntil} י׳`}</span>
+              </div>
             </div>
-          `;}).join('') : '<div class="empty-state" style="padding:12px 8px;">אין ימי הולדת קרובים</div>'}
+          `).join('') : '<div class="empty-state" style="padding:12px 8px;">אין ימי הולדת בחודש הקרוב</div>'; })()}
         </div>
       </div>
 
