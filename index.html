@@ -731,6 +731,50 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     margin-top: 2px;
     font-feature-settings: "tnum";
   }
+  .cal-host {
+    font-size: 10px;
+    color: var(--accent-light);
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+
+  /* ===== אירוח שבתות ===== */
+  .host-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .host-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 9px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-size: 13px;
+    color: var(--text-primary);
+  }
+  .host-chip .icon { color: var(--gold); }
+  .host-chip-ro { padding: 3px 8px; font-size: 12px; }
+  .host-chip-x {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted); padding: 0; margin-inline-start: 2px;
+  }
+  .host-chip-x:hover { color: var(--danger); }
+  .host-add-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .host-week {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .host-week:hover { background: var(--bg-card-hover); border-color: var(--border-strong); }
+  .host-week-when { min-width: 120px; flex-shrink: 0; }
+  .host-week-parsha { font-weight: 700; color: var(--gold-light); font-size: 14px; }
+  .host-week-date { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .host-week-guests { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .host-week-note { font-size: 12px; color: var(--text-muted); font-style: italic; }
 
   /* ZMANIM - גדול וברור לטאבלט */
   .zmanim-list {
@@ -2239,7 +2283,7 @@ const CONFIG = {
 
 // גרסת האפליקציה — מודבקת לתוך ה-bundle. הבאנר "יצאה גרסה חדשה" משווה אותה
 // לגרסה שבשרת (version.json). בכל פריסה חדשה — להעלות את המספר גם כאן וגם ב-version.json.
-const APP_VERSION = 'V01.01.00';
+const APP_VERSION = 'V01.02.00';
 
 // ============ ICONS (SVG, line style) ============
 const ICONS = {
