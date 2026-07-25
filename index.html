@@ -5915,7 +5915,14 @@ function openFamilyDetailsModal(famId) {
   if (!fam) return;
   const p1 = fam.parent1Id ? State.family.find(m => m.id === fam.parent1Id) : null;
   const p2 = fam.parent2Id ? State.family.find(m => m.id === fam.parent2Id) : null;
-  const children = (fam.childrenIds || []).map(cid => State.family.find(m => m.id === cid)).filter(Boolean);
+  const children = (fam.childrenIds || []).map(cid => State.family.find(m => m.id === cid)).filter(Boolean)
+    // מיון לפי תאריך לידה - הגדול (המבוגר) למעלה; מי שאין לו תאריך לידה בסוף
+    .sort((a, b) => {
+      if (!a.birthday && !b.birthday) return 0;
+      if (!a.birthday) return 1;
+      if (!b.birthday) return -1;
+      return new Date(a.birthday) - new Date(b.birthday);
+    });
   // ילדים שאינם במשפחה הזאת ויכולים להתווסף
   const availableMembers = State.family.filter(m =>
     m.id !== fam.parent1Id && m.id !== fam.parent2Id && !(fam.childrenIds||[]).includes(m.id)
@@ -7524,7 +7531,14 @@ function addFinanceProject(existing) {
     : State.families.map(fam => {
         const p1 = fam.parent1Id ? State.family.find(m => m.id === fam.parent1Id) : null;
         const p2 = fam.parent2Id ? State.family.find(m => m.id === fam.parent2Id) : null;
-        const children = (fam.childrenIds || []).map(cid => State.family.find(m => m.id === cid)).filter(Boolean);
+        const children = (fam.childrenIds || []).map(cid => State.family.find(m => m.id === cid)).filter(Boolean)
+          // מיון לפי תאריך לידה - הגדול (המבוגר) למעלה; מי שאין לו תאריך לידה בסוף
+          .sort((a, b) => {
+            if (!a.birthday && !b.birthday) return 0;
+            if (!a.birthday) return 1;
+            if (!b.birthday) return -1;
+            return new Date(a.birthday) - new Date(b.birthday);
+          });
         return `
         <div style="background: var(--bg-tertiary); padding: 10px 12px; border-radius: 8px; margin-bottom: 6px;">
           <label style="display:flex; align-items:center; gap:8px; font-weight:600; font-size:13px;">
