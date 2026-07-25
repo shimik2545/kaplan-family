@@ -283,9 +283,9 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   /* סקירת השבוע הקרוב בכרטיס "תזכורות יומיות" */
   .agenda-day-head {
     font-size: 11px; font-weight: 700; color: var(--gold);
-    margin: 10px 0 4px; padding-bottom: 3px; border-bottom: 1px solid var(--border);
+    margin: 12px 0 4px; padding-top: 10px; border-top: 1px solid var(--border);
   }
-  .agenda-day-head:first-child { margin-top: 0; }
+  .agenda-day-head:first-child { margin-top: 0; padding-top: 0; border-top: none; }
   .agenda-item { display: flex; align-items: flex-start; gap: 8px; padding: 4px 4px; }
   .agenda-item .agenda-icon { flex-shrink: 0; display: inline-flex; margin-top: 1px; }
   .agenda-item .agenda-icon svg { width: 14px; height: 14px; }
@@ -665,7 +665,6 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   }
   .calendar-day.today .calendar-day-greg { color: var(--accent-light); font-weight: 700; }
   .calendar-day.shabbat { background: rgba(139, 58, 74, 0.12); }
-  .calendar-day.holiday { background: rgba(201, 169, 110, 0.12); }
   .calendar-day-top { display:flex; justify-content: space-between; align-items: baseline; }
   .calendar-day-greg { font-weight: 600; font-size: 14px; }
   .calendar-day-heb { font-size: 11px; color: var(--text-muted); font-family: 'Heebo', sans-serif; }
@@ -952,6 +951,8 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     to { opacity: 1; transform: translateY(0); }
   }
   .view { animation: fadeIn 0.3s ease; }
+  /* מעבר חודש בלוח - בלי אנימציית כניסה, שהלוח לא "יקפוץ" בכל לחיצה */
+  #view.no-view-anim > .view { animation: none; }
 
   .pulse {
     animation: pulse 2s ease-in-out infinite;
@@ -1783,10 +1784,11 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     box-shadow: 0 6px 20px rgba(0,0,0,0.3);
   }
   .family-unit-card-name {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     color: var(--gold);
-    margin-bottom: 6px;
+    line-height: 1.3;
+    margin-bottom: 8px;
   }
   .family-unit-card-parents {
     font-family: 'Heebo', sans-serif;
@@ -2115,6 +2117,10 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   #update-banner-root { flex: 0 0 auto; z-index: 150; }
   #update-banner-root:empty { display: none; }
 
+  /* המגירה של רשימות שבת בוטלה - כשהמכל ריק אין להשאיר לו שורת-גריד שגוזלת גובה מהתוכן */
+  #active-list-drawer-container:empty { display: none; }
+  .app { grid-template-rows: minmax(0, 1fr); }
+
   .update-banner {
     display: flex; align-items: center; gap: 12px;
     width: 100%;
@@ -2345,6 +2351,25 @@ function gregToHebrew(date) {
       hd
     };
   } catch (e) { return null; }
+}
+
+// שנה עברית באותיות (גימטריה) - למשל 5775 -> תשע"ה
+function hebYearLetters(year) {
+  try { const HC = getHebcal(); if (HC && HC.gematriya) return HC.gematriya(year); } catch (e) {}
+  return String(year);
+}
+
+// מוסכמת "ערב": היום העברי מתחיל בשקיעת היום הלועזי הקודם.
+// לכן התאריך הלועזי של תאריך עברי הוא יום אחד לפני החישוב הסטנדרטי (שמתייחס ליום).
+function hebrewToGregEve(year, monthName, day) {
+  const g = hebrewToGreg(year, monthName, day);
+  if (!g) return null;
+  const e = new Date(g); e.setDate(e.getDate() - 1); return e;
+}
+// הכיוון ההפוך: תאריך לועזי נחשב כערב שבו מתחיל היום העברי, ולכן העברי הוא של היום הלועזי הבא.
+function gregToHebrewEve(date) {
+  const d = new Date(date); d.setDate(d.getDate() + 1);
+  return gregToHebrew(d);
 }
 
 function hebrewToGreg(year, monthName, day) {
@@ -3762,6 +3787,9 @@ function renderView() {
   const focusInfo = (act && el.contains(act) && act.id) ? { id: act.id, start: act.selectionStart, end: act.selectionEnd } : null;
 
   el.innerHTML = '';
+  // דילוג על אנימציית הכניסה (מעבר חודש בלוח) - שהתצוגה לא תזוז/תקפוץ
+  if (window._skipViewAnim) { el.classList.add('no-view-anim'); window._skipViewAnim = false; }
+  else el.classList.remove('no-view-anim');
   // הוסף/הסר class לפי תצוגה - בתצוגת הבית: לא מתוח לגובה
   if (currentView === 'home') el.classList.add('home-view');
   else el.classList.remove('home-view');
@@ -3875,7 +3903,7 @@ VIEW_RENDERERS.home = (root) => {
   } catch (e) { prepLists = []; }
   const upcomingBdays = getUpcomingBirthdays(60);
   const recentPastBdays = getRecentPastBirthdays(7);
-  const upcomingYahrzeits = getUpcomingYahrzeits(120);
+  const upcomingYahrzeits = getUpcomingYahrzeits(365);
   const openTasks = State.tasks.filter(t => !t.done);
   const importantMsgs = State.messages.filter(m => m.important);
   const today = new Date(); today.setHours(0,0,0,0);
@@ -3966,7 +3994,7 @@ VIEW_RENDERERS.home = (root) => {
 
       <!-- תזכורות הלכתיות + רשימות ערב שבת/חג -->
       <div class="card" style="order:1; display:flex; flex-direction:column;">
-        <div class="card-title">${icon('book')} תזכורות יומיות</div>
+        <div class="card-title">${icon('book')} השבוע הקרוב</div>
         <div style="margin-top: 6px; flex: 1; overflow-y: auto;">
           ${(() => {
             const agenda = getWeekAgenda(7);
@@ -4046,13 +4074,13 @@ VIEW_RENDERERS.home = (root) => {
           <button class="btn btn-sm" onclick="navigate('yahrzeits')">←</button>
         </div>
         <div>
-          ${upcomingYahrzeits.length > 0 ? upcomingYahrzeits.slice(0, 8).map(y => `
+          ${(() => { const wk = upcomingYahrzeits.filter(y => y.daysUntil !== null && y.daysUntil <= 7); return wk.length > 0 ? wk.slice(0, 8).map(y => `
             <div class="birthday-card yahrzeit">
               <div class="birthday-countdown">${y.daysUntil === 0 ? 'היום' : `בעוד ${y.daysUntil}י׳`}</div>
-              <div class="birthday-name">${esc(y.name)}</div>
-              <div class="birthday-date">${y.nextDate ? y.nextDate.toLocaleDateString('he-IL', {day:'numeric', month:'long'}) : ''}</div>
+              <div class="birthday-name">${esc(y.name)}${y.fatherName ? ` בן ${esc(y.fatherName)}` : ''}</div>
+              <div class="birthday-date">${y.hebStr || ''}${y.yearsAgo ? ` · ${y.yearsAgo} שנים` : ''}</div>
             </div>
-          `).join('') : '<div class="empty-state" style="padding:12px 8px;">לא נרשמו יארצייטים</div>'}
+          `).join('') : '<div class="empty-state" style="padding:12px 8px;">אין יארצייט השבוע הקרוב</div>'; })()}
         </div>
       </div>
 
@@ -4080,9 +4108,9 @@ VIEW_RENDERERS.home = (root) => {
         </div>
         <div>
           ${openTasks.length > 0 ? openTasks.slice(0, 12).map(t => `
-            <div class="check-item ${t.done ? 'done' : ''}" style="padding:5px 10px;" onclick="toggleTask('${t.id}')">
-              <input type="checkbox" ${t.done ? 'checked' : ''}>
-              <div class="check-text" style="flex:1;">${esc(t.title)}</div>
+            <div class="check-item ${t.done ? 'done' : ''}" style="padding:5px 10px;">
+              <input type="checkbox" ${t.done ? 'checked' : ''} onclick="toggleTask('${t.id}')" style="cursor:pointer;">
+              <div class="check-text" style="flex:1; cursor:pointer;" onclick="editTask('${t.id}')">${esc(t.title)}</div>
               ${t.priority === 'high' ? '<span class="badge badge-danger" style="font-size:9px;">דחוף</span>' : ''}
             </div>
           `).join('') : '<div class="empty-state" style="padding:12px 8px;">אין משימות פתוחות</div>'}
@@ -4332,7 +4360,7 @@ VIEW_RENDERERS.calendar = (root) => {
   });
 
   let daysHtml = '';
-  ['א','ב','ג','ד','ה','ו','ש'].forEach(d => daysHtml += `<div class="calendar-header">${d}</div>`);
+  ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'].forEach(d => daysHtml += `<div class="calendar-header">${d}</div>`);
   for (let i = 0; i < startDow; i++) daysHtml += '<div class="calendar-day empty"></div>';
   for (let d = 1; d <= lastDay.getDate(); d++) {
     const date = new Date(calYear, calMonth, d);
@@ -4429,11 +4457,13 @@ function changeMonth(delta) {
   calMonth += delta;
   if (calMonth < 0) { calMonth = 11; calYear--; }
   if (calMonth > 11) { calMonth = 0; calYear++; }
+  window._skipViewAnim = true;
   renderView();
 }
 function goToday() {
   calMonth = new Date().getMonth();
   calYear = new Date().getFullYear();
+  window._skipViewAnim = true;
   renderView();
 }
 
@@ -4680,14 +4710,12 @@ function familyResultsHtml() {
             const p1 = fam.parent1Id ? State.family.find(m => m.id === fam.parent1Id) : null;
             const p2 = fam.parent2Id ? State.family.find(m => m.id === fam.parent2Id) : null;
             const children = (fam.childrenIds || []).map(cid => State.family.find(m => m.id === cid)).filter(Boolean);
-            const parentsLine = [p1, p2].filter(Boolean).map(p => highlightMatch(p.name, q)).join(' ו');
-            // כששם המשפחה זהה לשמות ההורים - לא מציגים אותו פעמיים
-            const rawParents = [p1, p2].filter(Boolean).map(p => p.name).join(' ו');
-            const showFamName = (fam.name || '').trim() && (fam.name || '').trim() !== rawParents.trim();
+            // שורה אחת: שמות ההורים מאוחדים, עם שם המשפחה פעם אחת בסוף
+            const combined = (p1 || p2) ? combineParentNames(p1 && p1.name, p2 && p2.name) : '';
+            const parentsLine = combined ? highlightMatch(combined, q) : '<span style="color:var(--text-muted); font-size:13px; font-weight:400;">ללא הורים מוגדרים</span>';
             return `
               <div class="family-unit-card" onclick="openFamilyDetailsModal('${fam.id}')">
-                ${showFamName ? `<div class="family-unit-card-name">${highlightMatch(fam.name, q)}</div>` : ''}
-                <div class="family-unit-card-parents">${parentsLine || '<span style="color:var(--text-muted); font-size:13px; font-weight:400;">ללא הורים מוגדרים</span>'}</div>
+                <div class="family-unit-card-name">${parentsLine}</div>
                 <div class="family-unit-card-children">${icon('users', 12)} ${children.length} ${children.length === 1 ? 'ילד' : 'ילדים'}</div>
                 <div class="family-unit-card-actions">
                   <button class="btn btn-icon btn-sm" onclick="event.stopPropagation(); addFamilyUnit('${fam.id}')">${icon('edit', 14)}</button>
@@ -4757,6 +4785,19 @@ function onFamilySearch(val) {
   const el = document.getElementById('family-results');
   if (el) el.innerHTML = familyResultsHtml();
   else renderView();
+}
+
+// איחוד שמות שני הורים - אם יש שם משפחה משותף בסוף, מציגים אותו פעם אחת
+function combineParentNames(n1, n2) {
+  n1 = (n1 || '').trim(); n2 = (n2 || '').trim();
+  if (!n1) return n2;
+  if (!n2) return n1;
+  const w1 = n1.split(/\s+/), w2 = n2.split(/\s+/);
+  const surname = w1[w1.length - 1];
+  if (w1.length > 1 && w2.length > 1 && surname === w2[w2.length - 1]) {
+    return `${w1.slice(0, -1).join(' ')} ו${w2.slice(0, -1).join(' ')} ${surname}`;
+  }
+  return `${n1} ו${n2}`;
 }
 
 function highlightMatch(text, query) {
@@ -4945,7 +4986,7 @@ function updateHebDateDisplay() {
     if (yearSel && yearSel.value && dateInp) {
       const yr = parseInt(yearSel.value);
       const eng = resolveAdar(HEB_MONTH_TO_ENG[monthSel.value] || monthSel.value, yr);
-      const greg = hebrewToGreg(yr, eng, parseInt(dayInp.value));
+      const greg = hebrewToGregEve(yr, eng, parseInt(dayInp.value));
       if (greg) {
         dateInp.value = greg.getFullYear() + '-' + String(greg.getMonth() + 1).padStart(2, '0') + '-' + String(greg.getDate()).padStart(2, '0');
         display.innerHTML += ` <span style="color:var(--text-secondary); font-family:Heebo,sans-serif; font-size:12px;">= ${greg.toLocaleDateString('he-IL')}</span>`;
@@ -4964,12 +5005,12 @@ function convertGregToHeb() {
     return;
   }
   try {
-    const heb = gregToHebrew(new Date(dateInp.value));
+    const heb = gregToHebrewEve(new Date(dateInp.value));
     if (!heb) { toast('שגיאה בהמרה', 'danger'); return; }
     const dayInp = document.getElementById('fm-heb-day');
     const monthSel = document.getElementById('fm-heb-month');
     const yearSel = document.getElementById('fm-heb-year');
-    if (dayInp) dayInp.value = heb.day;
+    if (dayInp) dayInp.value = heb.day; // heb מגיע מ-gregToHebrewEve
     if (monthSel) {
       const HC = getHebcal();
       const engName = HC.HDate.getMonthName(heb.monthNum, heb.year);
@@ -5584,7 +5625,7 @@ function openFamilyDetailsModal(famId) {
 
   const content = `
     <div style="padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border);">
-      <div style="font-family: 'Heebo', sans-serif; font-size: 22px; color: var(--gold); margin-bottom: 4px;">${esc([p1?.name, p2?.name].filter(Boolean).join(' ו')) || 'ללא הורים מוגדרים'}</div>
+      <div style="font-family: 'Heebo', sans-serif; font-size: 22px; color: var(--gold); margin-bottom: 4px;">${esc(combineParentNames(p1 && p1.name, p2 && p2.name)) || 'ללא הורים מוגדרים'}</div>
       <div style="font-size: 12px; color: var(--text-muted);">${fam.name || ''} · ${children.length} ${children.length === 1 ? 'ילד' : 'ילדים'}</div>
     </div>
 
@@ -5806,7 +5847,7 @@ function getYahrzeitHebDate(y) {
 function getUpcomingYahrzeits(daysAhead = 365) {
   const today = new Date(); today.setHours(0,0,0,0);
   return State.yahrzeits.map(y => {
-    let nextDate = null, daysUntil = null, hebStr = '';
+    let nextDate = null, daysUntil = null, hebStr = '', yearsAgo = null;
     try {
       const HC = getHebcal();
       const yhd = getYahrzeitHebDate(y);
@@ -5820,13 +5861,14 @@ function getUpcomingYahrzeits(daysAhead = 365) {
           cand = hebrewToGreg(testYear, resolveAdar(rawEngMonth, testYear), yhd.day);
         }
         nextDate = cand;
-        // הצג בכתב יד עברי (גימטריה)
+        // הצג בכתב יד עברי (גימטריה) - כולל השנה באותיות
         const dayLetter = HEB_DAY_LETTERS[yhd.day] || yhd.day;
-        hebStr = `${dayLetter} ${yhd.month} ${yhd.year}`;
+        hebStr = `${dayLetter} ${yhd.month} ${hebYearLetters(yhd.year)}`;
         daysUntil = nextDate ? Math.round((nextDate - today) / 86400000) : null;
+        yearsAgo = curHebYear - yhd.year;
       }
     } catch (e) {}
-    return { ...y, nextDate, daysUntil, hebStr };
+    return { ...y, nextDate, daysUntil, hebStr, yearsAgo };
   }).filter(y => y.daysUntil !== null && y.daysUntil <= daysAhead).sort((a,b) => a.daysUntil - b.daysUntil);
 }
 
@@ -6175,7 +6217,7 @@ VIEW_RENDERERS.yahrzeits = (root) => {
         all.map(y => {
           const yhd = getYahrzeitHebDate(y);
           const dayLetter = yhd ? (HEB_DAY_LETTERS[yhd.day] || yhd.day) : '';
-          const hebDateStr = yhd ? `${dayLetter} ${yhd.month} ${yhd.year}` : new Date(y.date).toLocaleDateString('he-IL');
+          const hebDateStr = yhd ? `${dayLetter} ${yhd.month} ${hebYearLetters(yhd.year)}` : new Date(y.date).toLocaleDateString('he-IL');
           const today = new Date();
           const yearsAgo = yhd ? (() => {
             try {
@@ -6296,7 +6338,7 @@ function convertYzGregToHeb() {
     return;
   }
   try {
-    const heb = gregToHebrew(new Date(dateInp.value));
+    const heb = gregToHebrewEve(new Date(dateInp.value));
     if (!heb) { toast('שגיאה בהמרה', 'danger'); return; }
     const dayInp = document.getElementById('yz-heb-day');
     const monthSel = document.getElementById('yz-heb-month');
@@ -6347,7 +6389,7 @@ function updateYzHebDateDisplay() {
     if (yearSel && yearSel.value && dateInp) {
       const yr = parseInt(yearSel.value);
       const eng = resolveAdar(HEB_MONTH_TO_ENG[monthSel.value] || monthSel.value, yr);
-      const greg = hebrewToGreg(yr, eng, parseInt(dayInp.value));
+      const greg = hebrewToGregEve(yr, eng, parseInt(dayInp.value));
       if (greg) {
         dateInp.value = greg.getFullYear() + '-' + String(greg.getMonth() + 1).padStart(2, '0') + '-' + String(greg.getDate()).padStart(2, '0');
         display.innerHTML += ` <span style="color:var(--text-secondary); font-family:Heebo,sans-serif; font-size:12px;">= ${greg.toLocaleDateString('he-IL')}</span>`;
