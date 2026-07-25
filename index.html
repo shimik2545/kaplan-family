@@ -234,7 +234,9 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   .home-row-top { flex: 0 0 auto; height: 420px; max-height: 50vh; }
   .home-row-top > .card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .home-row-stats { flex: 0 0 auto; }
-  .home-row-widgets { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .home-row-widgets { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: 1.5fr repeat(4, 1fr); gap: 10px; }
+  /* ווידג'ט יארצייט - בצד ימין (עמודה ראשונה ב-RTL) ורחב יותר מהשאר */
+  .home-row-widgets .yz-col { order: -1; }
   .home-row-widgets .card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .home-row-widgets .card > .card-header { flex-shrink: 0; }
   .home-row-widgets .card > div:not(.card-header) { flex: 1; overflow-y: auto; min-height: 0; }
@@ -1044,6 +1046,34 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     font-size: 10px;
     font-weight: 600;
     color: var(--gold);
+  }
+
+  /* כרטיס יארצייט בווידג'ט מסך הבית - שם על כל הרוחב בשורה אחת, ומתחת: תאריך עברי מימין + "בעוד X ימים" משמאל */
+  .yz-widget-card {
+    background: linear-gradient(to left, rgba(125,138,163,0.06), var(--bg-secondary));
+    border: 1px solid var(--border);
+    border-right: 3px solid var(--text-muted);
+    border-radius: 6px;
+    padding: 7px 10px;
+    margin-bottom: 5px;
+  }
+  .yz-widget-name {
+    font-size: 13px; font-weight: 600; color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .yz-widget-row {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; margin-top: 3px;
+  }
+  .yz-widget-date {
+    font-size: 11px; color: var(--gold); font-family: 'Heebo', sans-serif;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  }
+  .yz-widget-cd {
+    flex-shrink: 0;
+    font-size: 10px; font-weight: 600; color: var(--gold);
+    background: var(--bg-tertiary); padding: 2px 8px; border-radius: 8px;
+    white-space: nowrap;
   }
 
   /* ============ עץ משפחתי - קומפקטי ============ */
@@ -4122,17 +4152,19 @@ VIEW_RENDERERS.home = (root) => {
         </div>
       </div>
 
-      <div class="card">
+      <div class="card yz-col">
         <div class="card-header">
           <div class="card-title">${icon('candle')} יארצייט</div>
           <button class="btn btn-sm" onclick="navigate('yahrzeits')">←</button>
         </div>
         <div>
           ${(() => { const wk = upcomingYahrzeits.filter(y => y.daysUntil !== null && y.daysUntil <= 7); return wk.length > 0 ? wk.slice(0, 8).map(y => `
-            <div class="birthday-card yahrzeit">
-              <div class="birthday-countdown">${y.daysUntil === 0 ? 'היום' : `בעוד ${y.daysUntil}י׳`}</div>
-              <div class="birthday-name">${esc(y.name)}${y.fatherName ? ` בן ${esc(y.fatherName)}` : ''}</div>
-              <div class="birthday-date">${y.hebStr || ''}${y.yearsAgo ? ` · ${y.yearsAgo} שנים` : ''}</div>
+            <div class="yz-widget-card">
+              <div class="yz-widget-name">${esc(y.name)}${y.fatherName ? ` בן ${esc(y.fatherName)}` : ''}</div>
+              <div class="yz-widget-row">
+                <span class="yz-widget-date">${y.hebStr || ''}</span>
+                <span class="yz-widget-cd">${y.daysUntil === 0 ? 'היום' : `בעוד ${y.daysUntil} י׳`}</span>
+              </div>
             </div>
           `).join('') : '<div class="empty-state" style="padding:12px 8px;">אין יארצייט השבוע הקרוב</div>'; })()}
         </div>
