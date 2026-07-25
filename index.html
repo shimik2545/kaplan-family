@@ -2320,7 +2320,7 @@ const CONFIG = {
 
 // גרסת האפליקציה — מודבקת לתוך ה-bundle. הבאנר "יצאה גרסה חדשה" משווה אותה
 // לגרסה שבשרת (version.json). בכל פריסה חדשה — להעלות את המספר גם כאן וגם ב-version.json.
-const APP_VERSION = 'V01.03.00';
+const APP_VERSION = 'V01.04.00';
 
 // ============ ICONS (SVG, line style) ============
 const ICONS = {
@@ -4146,7 +4146,7 @@ VIEW_RENDERERS.home = (root) => {
             <div class="yz-widget-card bd">
               <div class="yz-widget-name">${esc(b.name)}${b.age ? ` · ${b.age}` : ''}</div>
               <div class="yz-widget-row">
-                <span class="yz-widget-date">${b.date.toLocaleDateString('he-IL', {day:'numeric', month:'long'})}</span>
+                <span class="yz-widget-date">${b.hebStr || b.date.toLocaleDateString('he-IL', {day:'numeric', month:'long'})}</span>
                 <span class="yz-widget-cd">${b.daysUntil === 0 ? 'היום' : `בעוד ${b.daysUntil} י׳`}</span>
               </div>
             </div>
@@ -6102,7 +6102,16 @@ function getUpcomingBirthdays(daysAhead = 365) {
     } catch (e) {
       age = nextOccur.getFullYear() - orig.getFullYear();
     }
-    return { ...b, date: nextOccur, origDate: orig, daysUntil, age };
+    // מחרוזת תאריך עברי לתצוגה (יום באותיות + חודש + שנת לידה באותיות)
+    let hebStr = '';
+    try {
+      if (hebDay && hebMonth) {
+        const dl = HEB_DAY_LETTERS[hebDay] || hebDay;
+        const oh = gregToHebrew(orig);
+        hebStr = `${dl} ${hebMonth}${oh ? ' ' + hebYearLetters(oh.year) : ''}`;
+      }
+    } catch (e) {}
+    return { ...b, date: nextOccur, origDate: orig, daysUntil, age, hebStr };
   }).filter(b => b.daysUntil <= daysAhead).sort((a,b) => a.daysUntil - b.daysUntil);
 }
 
