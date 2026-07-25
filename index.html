@@ -2247,9 +2247,11 @@ const ICONS = {
   calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>',
   clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 11a4 4 0 100-8 4 4 0 000 8zM6 21v-2a4 4 0 014-4h4a4 4 0 014 4v2"/><circle cx="6" cy="9" r="3"/></svg>',
+  user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M5 21v-1a5 5 0 015-5h4a5 5 0 015 5v1"/></svg>',
   cake: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3M9 5l3-3 3 3"/><rect x="4" y="9" width="16" height="6" rx="1"/><path d="M4 14c1.5 2 3 0 4 0s2.5 2 4 0 2.5 2 4 0 2.5 2 4 0M4 19h16"/></svg>',
   candle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c1 1.5-1 2.5 0 4 1 1.5 2-.5 0-4z"/><rect x="9" y="9" width="6" height="11" rx="1"/><path d="M7 21h10"/></svg>',
   list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  cart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.3a1.5 1.5 0 001.5 1.2h8.2a1.5 1.5 0 001.5-1.2L22 7H6"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h11"/></svg>',
   checkCircle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>',
   bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M14 21a2 2 0 01-4 0"/></svg>',
@@ -2308,6 +2310,8 @@ const State = {
   messages: Store.get('messages', []),
   parentMessages: Store.get('parentMessages', []),
   shabbatLists: Store.get('shabbatLists', []),
+  shabbatGuests: Store.get('shabbatGuests', []),  // מתארחים אצלנו לכל שבת: { date:'YYYY-MM-DD', guests:[{kind:'family'|'member'|'text', id?, name}], note }
+  shoppingLists: Store.get('shoppingLists', []),
   finance: Store.get('finance', []),
   loans: Store.get('loans', []),
   trips: Store.get('trips', []),
@@ -2963,6 +2967,8 @@ const VIEWS = [
   { id: 'messages', icon: 'bell',      label: 'הודעות' },
   { id: 'parents',  icon: 'mail',      label: 'הודעות להורים' },
   { id: 'shabbat',  icon: 'shabbat',   label: 'רשימות שבת' },
+  { id: 'hosting',  icon: 'users',     label: 'אירוח שבתות' },
+  { id: 'shopping', icon: 'cart',      label: 'רשימות קניות' },
   { id: 'halacha',  icon: 'book',      label: 'הלכות יומיות' },
   { id: 'finance',  icon: 'wallet',    label: 'ניהול כספים' },
   { id: 'loans',    icon: 'handshake', label: 'השאלות שכנים' },
@@ -4583,8 +4589,204 @@ function addOnDate(type, dateStr) {
     case 'yahrzeit':    addYahrzeit(null, { date: presetDate });            break;
     case 'trip':        addTrip(null, { date: presetDate });                break;
     case 'shabbatList': addShabbatList(null, { activeDay: 'date:' + presetDate }); break;
+    case 'shabbatGuests': manageShabbatGuests(presetDate); break;
   }
 }
+
+// ============ אירוח שבתות (מי מתארח אצלנו) ============
+// מזהה שבת = תאריך לועזי של יום שבת בפורמט YYYY-MM-DD.
+
+function ymdStr(date) {
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+
+// שם תצוגה ליחידת משפחה (שם מפורש, או נגזר משמות ההורים)
+function familyUnitLabel(fam) {
+  if (!fam) return 'משפחה';
+  if (fam.name) return fam.name;
+  const p1 = fam.parent1Id ? State.family.find(x => x.id === fam.parent1Id) : null;
+  const p2 = fam.parent2Id ? State.family.find(x => x.id === fam.parent2Id) : null;
+  if (p1 && p2) return `${p1.name} ו${p2.name}`;
+  if (p1) return p1.name;
+  if (p2) return p2.name;
+  return 'משפחה';
+}
+
+function getShabbatGuestRec(dateStr) {
+  return (State.shabbatGuests || []).find(r => r.date === dateStr) || null;
+}
+function shabbatGuestList(dateStr) {
+  const rec = getShabbatGuestRec(dateStr);
+  return rec ? (rec.guests || []) : [];
+}
+function guestKey(g) { return g.kind + ':' + (g.id || g.name); }
+
+// טיוטת עריכה פעילה
+let _hostingEdit = null;
+
+function manageShabbatGuests(dateStr) {
+  const existing = getShabbatGuestRec(dateStr);
+  _hostingEdit = {
+    date: dateStr,
+    guests: existing ? existing.guests.map(g => ({ ...g })) : [],
+    note: existing ? (existing.note || '') : '',
+  };
+  const date = new Date(dateStr + 'T12:00:00');
+  const parsha = getParsha(date);
+  const dLabel = date.toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
+  const title = `מתארחים אצלנו${parsha ? ' · ' + parsha : ''}`;
+  openModal(title, `<div style="color:var(--text-muted); font-size:12px; margin-bottom:12px;">${dLabel}</div><div id="hosting-body">${hostingModalBody()}</div>`, () => {
+    saveShabbatGuests();
+    return true;
+  });
+}
+
+function hostingRerender() {
+  const el = document.getElementById('hosting-body');
+  if (el) el.innerHTML = hostingModalBody();
+}
+
+function hostingModalBody() {
+  const g = _hostingEdit.guests;
+  const chips = g.length ? g.map((x, i) => `
+    <span class="host-chip">
+      ${icon(x.kind === 'family' ? 'users' : (x.kind === 'member' ? 'user' : 'pin'), 13)}
+      <span>${esc(x.name)}</span>
+      <button class="host-chip-x" onclick="hostingRemove(${i})" title="הסר">${icon('close', 12)}</button>
+    </span>`).join('') : '<div style="color:var(--text-muted); font-size:13px; padding:6px 2px;">עדיין לא נוספו מתארחים לשבת זו.</div>';
+
+  // יחידות משפחה שכבר לא נבחרו
+  const chosen = new Set(g.map(guestKey));
+  const famOpts = (State.families || [])
+    .map(f => ({ id: f.id, label: familyUnitLabel(f) }))
+    .filter(o => !chosen.has('family:' + o.id))
+    .map(o => `<option value="${o.id}">${esc(o.label)}</option>`).join('');
+  const memOpts = (State.family || [])
+    .filter(m => m.name && !chosen.has('member:' + m.id))
+    .map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
+
+  return `
+    <div class="host-chips">${chips}</div>
+
+    <div class="subheading" style="margin-top:16px;">הוספה</div>
+
+    ${famOpts ? `<div class="host-add-row">
+      <select id="host-family-sel" style="flex:1; min-width:0;"><option value="">— בחר יחידת משפחה —</option>${famOpts}</select>
+      <button class="btn btn-sm" onclick="hostingAddFamily()">${icon('plus',14)} הוסף</button>
+    </div>` : ''}
+
+    ${memOpts ? `<div class="host-add-row">
+      <select id="host-member-sel" style="flex:1; min-width:0;"><option value="">— בחר בן משפחה —</option>${memOpts}</select>
+      <button class="btn btn-sm" onclick="hostingAddMember()">${icon('plus',14)} הוסף</button>
+    </div>` : ''}
+
+    <div class="host-add-row">
+      <input type="text" id="host-text" placeholder="שם חופשי (למשל: משפחת לוי מירושלים)" style="flex:1; min-width:0;" onkeydown="if(event.key==='Enter'){event.preventDefault();hostingAddText();}">
+      <button class="btn btn-sm" onclick="hostingAddText()">${icon('plus',14)} הוסף</button>
+    </div>
+
+    <div class="form-group" style="margin-top:14px;">
+      <label class="form-label">הערה (אופציונלי)</label>
+      <input type="text" id="host-note" value="${esc(_hostingEdit.note)}" placeholder="למשל: לינה, או ארוחת צהריים בלבד" onchange="_hostingEdit.note=this.value">
+    </div>
+  `;
+}
+
+function hostingAddFamily() {
+  const sel = document.getElementById('host-family-sel');
+  const id = sel && sel.value;
+  if (!id) return;
+  const fam = State.families.find(f => f.id === id);
+  if (!fam) return;
+  const g = { kind: 'family', id, name: familyUnitLabel(fam) };
+  if (!_hostingEdit.guests.some(x => guestKey(x) === guestKey(g))) _hostingEdit.guests.push(g);
+  hostingRerender();
+}
+function hostingAddMember() {
+  const sel = document.getElementById('host-member-sel');
+  const id = sel && sel.value;
+  if (!id) return;
+  const m = State.family.find(x => x.id === id);
+  if (!m) return;
+  const g = { kind: 'member', id, name: m.name };
+  if (!_hostingEdit.guests.some(x => guestKey(x) === guestKey(g))) _hostingEdit.guests.push(g);
+  hostingRerender();
+}
+function hostingAddText() {
+  const inp = document.getElementById('host-text');
+  const name = inp ? inp.value.trim() : '';
+  if (!name) return;
+  const g = { kind: 'text', name };
+  if (!_hostingEdit.guests.some(x => guestKey(x) === guestKey(g))) _hostingEdit.guests.push(g);
+  hostingRerender();
+}
+function hostingRemove(i) {
+  _hostingEdit.guests.splice(i, 1);
+  hostingRerender();
+}
+
+function saveShabbatGuests() {
+  if (!_hostingEdit) return;
+  // קלוט הערה עדכנית מהשדה אם המודל עדיין פתוח
+  const noteEl = document.getElementById('host-note');
+  if (noteEl) _hostingEdit.note = noteEl.value;
+  const { date, guests, note } = _hostingEdit;
+  State.shabbatGuests = (State.shabbatGuests || []).filter(r => r.date !== date);
+  if (guests.length || (note && note.trim())) {
+    State.shabbatGuests.push({ date, guests, note: (note || '').trim() });
+  }
+  saveState();
+  _hostingEdit = null;
+  toast('נשמר', 'success');
+  renderView();
+}
+
+// ============ מסך: אירוח שבתות ============
+VIEW_RENDERERS.hosting = (root) => {
+  // רשימת השבתות הקרובות (כולל שבת הקרובה) קדימה
+  const today = new Date(); today.setHours(12, 0, 0, 0);
+  let sat = new Date(today);
+  while (sat.getDay() !== 6) sat = new Date(sat.getTime() + 86400000);
+  const WEEKS = 14;
+  const rows = [];
+  for (let i = 0; i < WEEKS; i++) {
+    const d = new Date(sat.getTime() + i * 7 * 86400000);
+    const dateStr = ymdStr(d);
+    rows.push({
+      dateStr,
+      parsha: getParsha(d),
+      dLabel: d.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' }),
+      guests: shabbatGuestList(dateStr),
+      note: (getShabbatGuestRec(dateStr) || {}).note || '',
+    });
+  }
+
+  root.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${icon('users')} אירוח שבתות</div>
+      </div>
+      <p style="color:var(--text-muted); font-size:13px; margin:6px 0 14px;">מי מתארח אצלנו בכל שבת. לחיצה על שבת פותחת הוספה/עריכה.</p>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        ${rows.map(r => `
+          <div class="host-week" onclick="manageShabbatGuests('${r.dateStr}')">
+            <div class="host-week-when">
+              <div class="host-week-parsha">${r.parsha ? esc(r.parsha) : 'שבת'}</div>
+              <div class="host-week-date">${r.dLabel}</div>
+            </div>
+            <div class="host-week-guests">
+              ${r.guests.length
+                ? r.guests.map(x => `<span class="host-chip host-chip-ro">${icon(x.kind==='family'?'users':(x.kind==='member'?'user':'pin'),12)}<span>${esc(x.name)}</span></span>`).join('')
+                    + (r.note ? `<span class="host-week-note">${esc(r.note)}</span>` : '')
+                : '<span style="color:var(--text-muted); font-size:12px;">— אין מתארחים —</span>'}
+            </div>
+            <button class="btn btn-icon btn-sm" onclick="event.stopPropagation(); manageShabbatGuests('${r.dateStr}')" title="ערוך">${icon('edit',14)}</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+};
 
 // ============ ZMANIM VIEW ============
 VIEW_RENDERERS.zmanim = (root) => {
@@ -6926,6 +7128,96 @@ async function deleteShabbatItem(listId, idx) {
   list.items.splice(idx, 1); saveState(); renderView(); renderActiveListDrawer();
 }
 
+// ============ רשימות קניות (נפרדות לגמרי מרשימות שבת/חג) ============
+// רשימות פשוטות ומתמשכות: אין יום פעיל, אין איפוס, אין הופעה בצד המסך.
+VIEW_RENDERERS.shopping = (root) => {
+  root.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">${icon('cart')} רשימות קניות</div>
+        <button class="btn btn-primary" onclick="addShoppingList()">${icon('plus', 14)} רשימה חדשה</button>
+      </div>
+      <div style="font-size:11px; color:var(--text-muted); margin-bottom:10px;">
+        רשימות מתמשכות (סופר, בית מרקחת וכו'). פריט שמסומן יורד לתחתית; מחיקה מסירה אותו לגמרי. הרשימות לא מתאפסות מעצמן.
+      </div>
+      ${(State.shoppingLists||[]).length === 0 ? '<div class="empty-state">עדיין אין רשימות קניות. צור רשימה כמו "קניות לסופר" או "בית מרקחת"</div>' :
+        State.shoppingLists.map(list => {
+          const items = list.items || [];
+          const doneCount = items.filter(i => i.done).length;
+          const pct = items.length ? Math.round(doneCount / items.length * 100) : 0;
+          return `
+          <div class="card" style="background: var(--bg-secondary); margin-bottom: 10px;">
+            <div class="card-header">
+              <div>
+                <div class="card-title">${icon('cart', 16)} ${esc(list.name)}</div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">${items.length} פריטים · ${doneCount} סומנו</div>
+              </div>
+              <div style="display:flex; gap:4px;">
+                <button class="btn btn-sm" onclick="addShoppingItem('${list.id}')">${icon('plus', 12)} פריט</button>
+                <button class="btn btn-icon btn-sm" onclick="editShoppingList('${list.id}')">${icon('edit', 14)}</button>
+                <button class="btn btn-icon btn-sm btn-danger" onclick="deleteShoppingList('${list.id}')">${icon('trash', 14)}</button>
+              </div>
+            </div>
+            ${items.slice().map((it, i) => ({ it, i })).sort((a, b) => (a.it.done ? 1 : 0) - (b.it.done ? 1 : 0)).map(({ it, i }) => `
+              <div class="check-item ${it.done?'done':''}" onclick="toggleShoppingItem('${list.id}', ${i})">
+                <input type="checkbox" ${it.done?'checked':''}>
+                <div class="check-text" style="flex:1;">${esc(it.text)}</div>
+                <button class="btn btn-icon btn-sm btn-danger" onclick="event.stopPropagation(); deleteShoppingItem('${list.id}', ${i})">${icon('trash', 12)}</button>
+              </div>
+            `).join('')}
+            ${items.length === 0 ? '<div class="empty-state" style="padding:10px;">אין פריטים</div>' : `
+            <div style="margin-top: 8px;">
+              <div class="progress"><div class="progress-bar" style="width:${pct}%"></div></div>
+              <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px; text-align:center;">${pct}% נאספו</div>
+            </div>`}
+          </div>
+        `}).join('')}
+    </div>
+  `;
+};
+function addShoppingList(existing) {
+  const list = existing || { id: Date.now().toString(), name: '', items: [] };
+  openModal(existing ? 'עריכת רשימת קניות' : 'רשימת קניות חדשה', `
+    <div class="form-group"><label class="form-label">שם הרשימה</label><input type="text" id="shl-name" value="${esc(list.name)}" placeholder="למשל: קניות לסופר"></div>
+  `, () => {
+    list.name = document.getElementById('shl-name').value.trim();
+    if (!list.name) { toast('שם נדרש', 'danger'); return false; }
+    if (!existing) State.shoppingLists.push(list);
+    saveState();
+    renderView();
+    toast('נשמר', 'success');
+  });
+}
+function editShoppingList(id) { const l = State.shoppingLists.find(x => x.id === id); if (l) addShoppingList(l); }
+async function deleteShoppingList(id) {
+  if (!requireAdmin(() => deleteShoppingList(id))) return;
+  if (!(await appConfirm('למחוק את רשימת הקניות?'))) return;
+  State.shoppingLists = State.shoppingLists.filter(l => l.id !== id);
+  saveState(); renderView();
+}
+async function addShoppingItem(listId) {
+  const text = await appPrompt('פריט להוספה:');
+  if (!text) return;
+  const list = State.shoppingLists.find(l => l.id === listId);
+  if (list) {
+    if (!list.items) list.items = [];
+    list.items.push({ text, done: false });
+    saveState(); renderView();
+  }
+}
+function toggleShoppingItem(listId, idx) {
+  const list = State.shoppingLists.find(l => l.id === listId);
+  if (!list || !list.items[idx]) return;
+  list.items[idx].done = !list.items[idx].done;
+  saveState(); renderView();
+}
+async function deleteShoppingItem(listId, idx) {
+  const list = State.shoppingLists.find(l => l.id === listId);
+  if (!list || !list.items[idx]) return;
+  if (!(await appConfirm(`למחוק את "${list.items[idx].text}"?`))) return;
+  list.items.splice(idx, 1); saveState(); renderView();
+}
+
 // ============ Active List Drawer ============
 let _drawerCollapsed = false;
 
@@ -7650,13 +7942,13 @@ function doLookupGreg() {
     const dateStr = document.getElementById('lk-greg-date').value;
     const years = parseInt(document.getElementById('lk-greg-years').value) || 1;
     const orig = new Date(dateStr);
-    const origHeb = gregToHebrew(orig);
+    const origHeb = gregToHebrewEve(orig);
     if (!origHeb) { toast('שגיאה', 'danger'); return; }
-    // future occurrence: add `years` to hebrew year, find that hebrew date in greg
+    // future occurrence: add `years` to hebrew year, find that hebrew date in greg (מוסכמת ערב)
     const futureYear = origHeb.year + years;
     const monthName = HC.HDate.getMonthName(origHeb.monthNum, futureYear);
-    const futureGreg = hebrewToGreg(futureYear, monthName, origHeb.day);
-    const futureHeb = gregToHebrew(futureGreg);
+    const futureGreg = hebrewToGregEve(futureYear, monthName, origHeb.day);
+    const futureHeb = gregToHebrewEve(futureGreg);
     document.getElementById('lk-greg-result').innerHTML = `
       <div class="card" style="background: var(--bg-secondary);">
         <div style="color: var(--text-muted); font-size:13px;">תאריך מקור</div>
@@ -7685,25 +7977,25 @@ function doLookupHeb() {
     const engMonthMap = {'ניסן':'Nisan','אייר':'Iyyar','סיון':'Sivan','תמוז':'Tamuz','אב':'Av','אלול':'Elul','תשרי':'Tishrei','חשון':'Cheshvan','כסלו':'Kislev','טבת':'Tevet','שבט':'Shvat','אדר':'Adar','אדר ב':'Adar II'};
     const engMonth = engMonthMap[month];
     let testYear = curHeb.year;
-    let firstDate = hebrewToGreg(testYear, engMonth, day);
+    let firstDate = hebrewToGregEve(testYear, engMonth, day);
     if (firstDate < today) {
       testYear++;
-      firstDate = hebrewToGreg(testYear, engMonth, day);
+      firstDate = hebrewToGregEve(testYear, engMonth, day);
     }
     const futureYear = testYear + years;
     const futureEngMonth = resolveAdar(engMonth, futureYear);
-    const futureGreg = hebrewToGreg(futureYear, futureEngMonth, day);
-    const futureHeb = futureGreg ? gregToHebrew(futureGreg) : null;
+    const futureGreg = hebrewToGregEve(futureYear, futureEngMonth, day);
+    const futureHeb = futureGreg ? gregToHebrewEve(futureGreg) : null;
     document.getElementById('lk-heb-result').innerHTML = `
       <div class="card" style="background: var(--bg-secondary);">
         <div style="color: var(--text-muted); font-size:13px;">תאריך עברי</div>
-        <div class="hebrew-font" style="color: var(--gold); font-size:22px;">${day} ${month} ${testYear}</div>
+        <div class="hebrew-font" style="color: var(--gold); font-size:22px;">${HEB_DAY_LETTERS[day] || day} ${month} ${hebYearLetters(testYear)}</div>
         <div style="font-size:14px; margin-top:4px;">הפעם הקרובה: ${firstDate.toLocaleDateString('he-IL', {weekday:'long', day:'numeric', month:'long', year:'numeric'})}</div>
       </div>
       <div style="text-align:center; margin: 12px 0; font-size:24px;">↓ +${years} שנים ↓</div>
       <div class="card" style="background: linear-gradient(135deg, var(--accent-glow), transparent);">
         <div style="color: var(--text-muted); font-size:13px;">בעוד ${years} שנים</div>
-        <div class="hebrew-font" style="color: var(--gold); font-size:22px;">${day} ${futureHeb ? ENG_MONTH_TO_HEB[futureEngMonth] || month : month} ${futureYear}</div>
+        <div class="hebrew-font" style="color: var(--gold); font-size:22px;">${HEB_DAY_LETTERS[day] || day} ${futureHeb ? ENG_MONTH_TO_HEB[futureEngMonth] || month : month} ${hebYearLetters(futureYear)}</div>
         <div style="font-size:18px; margin-top:4px; font-weight:600;">${futureGreg ? futureGreg.toLocaleDateString('he-IL', {weekday:'long', day:'numeric', month:'long', year:'numeric'}) : 'לא ניתן לחשב'}</div>
       </div>
     `;
@@ -8657,6 +8949,7 @@ Object.assign(window, {
   addMessage, editMessage, deleteMessage,
   addParentMsg, toggleParentMsg, deleteParentMsg,
   addShabbatList, editShabbatList, deleteShabbatList, addShabbatItem, toggleShabbatItem, deleteShabbatItem,
+  addShoppingList, editShoppingList, deleteShoppingList, addShoppingItem, toggleShoppingItem, deleteShoppingItem,
   renderActiveListDrawer, toggleActiveListDrawer,
   addFinanceProject, editFinanceProject, deleteFinanceProject, markPayment, addShareRow,
   addLoan, markReturned, deleteLoan,
