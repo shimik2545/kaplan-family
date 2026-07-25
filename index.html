@@ -4394,10 +4394,12 @@ VIEW_RENDERERS.calendar = (root) => {
     if (isShabbat) {
       const parsha = getParsha(date);
       const exitTime = getShabbatExit(date);
-      if (parsha || exitTime) {
+      const guestCount = shabbatGuestList(`${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`).length;
+      if (parsha || exitTime || guestCount) {
         shabbatBlockHtml = `<div class="cal-shabbat-block">
           ${parsha ? `<div class="cal-parsha">${parsha}</div>` : ''}
           ${exitTime ? `<div class="cal-shabbat-exit">צאת שבת ${exitTime}</div>` : ''}
+          ${guestCount ? `<div class="cal-host">${icon('users',10)} ${guestCount} מתארחים</div>` : ''}
         </div>`;
       }
     }
@@ -4537,6 +4539,20 @@ function showDayDetails(y, m, d) {
   // זמני היום עבור התאריך הנבחר
   const dayZmanim = getZmanim(date) || {};
 
+  // אירוח שבת — רק בשבת
+  const isShabbatDay = date.getDay() === 6;
+  const dayGuests = isShabbatDay ? shabbatGuestList(dateStr) : [];
+  const dayGuestNote = isShabbatDay ? ((getShabbatGuestRec(dateStr) || {}).note || '') : '';
+  const hostingHtml = isShabbatDay ? `
+    <div class="subheading" style="margin-top:16px; display:flex; align-items:center; justify-content:space-between;">
+      <span>${icon('users', 14)} מתארחים אצלנו</span>
+      <button class="btn btn-sm" onclick="manageShabbatGuests('${dateStr}')">${icon('edit',13)} ${dayGuests.length ? 'ערוך' : 'הוסף'}</button>
+    </div>
+    ${dayGuests.length
+      ? `<div class="host-chips">${dayGuests.map(x => `<span class="host-chip host-chip-ro">${icon(x.kind==='family'?'users':(x.kind==='member'?'user':'pin'),12)}<span>${esc(x.name)}</span></span>`).join('')}</div>${dayGuestNote ? `<div style="font-size:12px; color:var(--text-muted); margin-top:6px;">${esc(dayGuestNote)}</div>` : ''}`
+      : '<div style="font-size:13px; color:var(--text-muted); padding:2px;">אין מתארחים רשומים לשבת זו.</div>'}
+  ` : '';
+
   const content = `
     <div class="hebrew-large">${hebStr}</div>
     <div style="text-align: center; color: var(--text-muted); margin-bottom: 16px;">${date.toLocaleDateString('he-IL', { weekday:'long', day:'numeric', month:'long', year:'numeric'})}</div>
@@ -4552,6 +4568,8 @@ function showDayDetails(y, m, d) {
     ${tasks.length ? `<div class="subheading" style="margin-top:14px;">${icon('check', 14)} משימות</div>${tasks.map(t => `<div class="list-item ${t.done?'done':''}"><div class="list-item-content"><div class="list-item-title" style="${t.done?'text-decoration:line-through; opacity:0.6;':''}">${esc(t.title)}</div><div class="list-item-subtitle">${t.priority==='high'?'<span class="badge badge-danger">דחוף</span>':''}${t.assignedTo?' '+esc(t.assignedTo):''}</div></div></div>`).join('')}` : ''}
 
     ${(!holidays.length && !birthdays.length && !yahrzeits.length && !events.length && !tasks.length) ? '<div style="padding: 14px 8px; text-align:center; color:var(--text-muted); font-size:13px;">אין אירועים מיוחדים בתאריך זה</div>' : ''}
+
+    ${hostingHtml}
 
     <!-- זמני היום -->
     <div class="subheading" style="margin-top:16px;">${icon('clock', 14)} זמני היום · ${CONFIG.city}</div>
@@ -4573,6 +4591,7 @@ function showDayDetails(y, m, d) {
     <button onclick="addOnDate('yahrzeit', '${dateStr}')">${icon('candle', 14)} יארצייט</button>
     <button onclick="addOnDate('trip', '${dateStr}')">${icon('briefcase', 14)} טיול</button>
     <button onclick="addOnDate('shabbatList', '${dateStr}')">${icon('shabbat', 14)} רשימה לתאריך</button>
+    ${date.getDay() === 6 ? `<button onclick="addOnDate('shabbatGuests', '${dateStr}')">${icon('users', 14)} מתארחים בשבת</button>` : ''}
   `;
   openModal('פרטי תאריך', content, () => true, { menu: addMenu });
   document.getElementById('modal-save').style.display = 'none';
@@ -4642,6 +4661,9 @@ function manageShabbatGuests(dateStr) {
 }
 
 function hostingRerender() {
+  // שמור הערה שהוקלדה לפני בנייה מחדש כדי שלא תאבד בהוספה/הסרה
+  const noteEl = document.getElementById('host-note');
+  if (noteEl && _hostingEdit) _hostingEdit.note = noteEl.value;
   const el = document.getElementById('hosting-body');
   if (el) el.innerHTML = hostingModalBody();
 }
@@ -4687,7 +4709,7 @@ function hostingModalBody() {
 
     <div class="form-group" style="margin-top:14px;">
       <label class="form-label">הערה (אופציונלי)</label>
-      <input type="text" id="host-note" value="${esc(_hostingEdit.note)}" placeholder="למשל: לינה, או ארוחת צהריים בלבד" onchange="_hostingEdit.note=this.value">
+      <input type="text" id="host-note" value="${esc(_hostingEdit.note)}" placeholder="למשל: לינה, או ארוחת צהריים בלבד">
     </div>
   `;
 }
@@ -7922,7 +7944,11 @@ VIEW_RENDERERS.datelookup = (root) => {
             ${HEBREW_MONTHS.map((m, i) => `<option value="${m}">${m}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group"><label class="form-label">יום בחודש</label><input type="number" id="lk-heb-day" min="1" max="30" value="1"></div>
+        <div class="form-group"><label class="form-label">יום בחודש</label>
+          <select id="lk-heb-day" class="hebrew-font" style="font-size:16px;">
+            ${HEB_DAY_LETTERS.slice(1).map((letter, i) => `<option value="${i+1}">${letter}</option>`).join('')}
+          </select>
+        </div>
         <div class="form-group"><label class="form-label">בעוד כמה שנים?</label><input type="number" id="lk-heb-years" value="1" min="1" max="120"></div>
         <button class="btn btn-primary btn-block" onclick="doLookupHeb()">בדוק</button>
         <div id="lk-heb-result" style="margin-top:20px;"></div>
