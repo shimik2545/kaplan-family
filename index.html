@@ -5011,8 +5011,30 @@ function familyResultsHtml() {
     });
   };
 
-  const filteredFamilies = State.families.filter(filterFamily);
-  const filteredMembers = State.family.filter(filterMember);
+  // תאריך הלידה של ההורה המבוגר ביותר ביחידת משפחה (לצורך מיון)
+  const familyOldestBirthday = (fam) => {
+    const dates = [fam.parent1Id, fam.parent2Id]
+      .map(id => id && State.family.find(m => m.id === id))
+      .filter(Boolean)
+      .map(m => m.birthday)
+      .filter(Boolean);
+    if (!dates.length) return null;
+    return dates.reduce((min, d) => new Date(d) < new Date(min) ? d : min);
+  };
+  // מיון לפי תאריך לידה עולה (המבוגר קודם); מי שאין לו תאריך - בסוף
+  const byBirthdayAsc = (da, db) => {
+    if (!da && !db) return 0;
+    if (!da) return 1;
+    if (!db) return -1;
+    return new Date(da) - new Date(db);
+  };
+
+  // משפחות ממוינות לפי תאריך הלידה של ההורים - הסבים (המבוגרים) ראשונים
+  const filteredFamilies = State.families.filter(filterFamily)
+    .sort((a, b) => byBirthdayAsc(familyOldestBirthday(a), familyOldestBirthday(b)));
+  // בני משפחה ממוינים לפי גיל - המבוגר קודם (הקבוצות לפי קרבה מסתדרות ממבוגר לצעיר)
+  const filteredMembers = State.family.filter(filterMember)
+    .sort((a, b) => byBirthdayAsc(a.birthday, b.birthday));
 
   const grouped = {};
   filteredMembers.forEach(f => { const k = f.relation || 'אחר'; (grouped[k] = grouped[k] || []).push(f); });
