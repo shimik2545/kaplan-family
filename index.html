@@ -215,6 +215,21 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   #view.fit-view .cal-shabbat-block { margin-top: 2px; padding-top: 2px; }
   #view.fit-view .cal-parsha { font-size: 9px; }
   #view.fit-view .cal-shabbat-exit { font-size: 8px; }
+  /* מסך זמני היום - נכנס כולו במסך ללא גלילה */
+  #view.zmanim-fit > .view { overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
+  #view.zmanim-fit .zmanim-big-clock { flex-shrink: 0; padding: 10px 14px; }
+  #view.zmanim-fit .zmanim-big-clock .next-name { font-size: 15px; margin-bottom: 2px; }
+  #view.zmanim-fit .zmanim-big-clock .countdown { font-size: 34px; line-height: 1.05; letter-spacing: 1px; }
+  #view.zmanim-fit .zmanim-big-clock .at-time { font-size: 14px; margin-top: 2px; }
+  #view.zmanim-fit > .view > .card:last-child { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 0 !important; }
+  #view.zmanim-fit > .view > .card:last-child > .card-header { flex-shrink: 0; margin-bottom: 8px; }
+  #view.zmanim-fit .card-title { font-size: 18px !important; }
+  #view.zmanim-fit .zmanim-list { flex: 1; min-height: 0; grid-auto-rows: 1fr; gap: 6px; }
+  #view.zmanim-fit .zman-item { padding: 4px 16px; border-radius: 8px; }
+  #view.zmanim-fit .zman-name { font-size: 15px; }
+  #view.zmanim-fit .zman-time { font-size: 20px; }
+  #view.zmanim-fit .zman-item.next .zman-time { font-size: 22px; }
+  #view.zmanim-fit .zmanim-legend { display: none; }
   /* שורות במסך הבית */
   .home-row-top { flex: 0 0 auto; height: 420px; max-height: 50vh; }
   .home-row-top > .card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -257,6 +272,14 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   .smart-clock-card .zmanim-pinned-next .name { font-size: 14px; color: #fff; font-weight: 700; }
   .smart-clock-card .zmanim-pinned-next .time { font-size: 17px; color: #fff5cc; font-weight: 700; font-feature-settings: 'tnum'; letter-spacing: 0.5px; }
   .smart-clock-card .zmanim-scroll { flex: 1; overflow-y: auto; min-height: 0; padding-top: 4px; }
+  /* שורת "הזמן הבא" בכרטיס זמני היום במסך הבית - עיצוב אחיד עם המערכת */
+  .zmanim-next-row {
+    flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;
+    background: rgba(201,169,110,0.14); border-right: 3px solid var(--gold);
+    border-radius: 6px; padding: 6px 10px; margin: 6px 0 0;
+  }
+  .zmanim-next-row .name { font-size: 13px; color: var(--text-primary); font-weight: 700; }
+  .zmanim-next-row .time { font-size: 15px; color: var(--gold); font-weight: 700; font-feature-settings: 'tnum'; letter-spacing: 0.5px; }
   .main::-webkit-scrollbar { width: 6px; }
   .main::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 6px; }
 
@@ -3716,6 +3739,7 @@ function renderView() {
   else el.classList.remove('home-view');
   // לוח שנה - תצוגה שנכנסת כולה במסך ללא גלילה
   el.classList.toggle('fit-view', currentView === 'calendar');
+  el.classList.toggle('zmanim-fit', currentView === 'zmanim');
   const v = document.createElement('div');
   v.className = 'view';
   el.appendChild(v);
@@ -3748,9 +3772,12 @@ VIEW_RENDERERS.home = (root) => {
   try {
     const erev = getErevInfo(new Date());
     const inHolyMode = (typeof shabbatMode !== 'undefined' && shabbatMode);
-    prepLists = (State.shabbatLists || []).filter(l =>
-      ((erev || inHolyMode) && l.activeDay === 'shabbat') || isListActiveToday(l)
-    );
+    prepLists = (State.shabbatLists || []).filter(l => {
+      // רשימת שבת/חג מוצגת במסך הבית רק בערב שבת/חג (יום ההכנה) או במהלך שבת/חג עצמו - לא במוצאי שבת
+      if (l.activeDay === 'shabbat') return !!(erev || inHolyMode);
+      // רשימות אחרות (קבועה / תאריך) - לפי הכלל הרגיל
+      return isListActiveToday(l);
+    });
   } catch (e) { prepLists = []; }
   const upcomingBdays = getUpcomingBirthdays(60);
   const recentPastBdays = getRecentPastBirthdays(7);
@@ -3777,14 +3804,15 @@ VIEW_RENDERERS.home = (root) => {
     <!-- שורה עליונה: כרטיס זמני היום + שעון אנלוגי + תזכורות -->
     <div class="home-row-top" style="display: grid; grid-template-columns: 1fr 1.1fr 1fr; gap: 10px;">
       <!-- כרטיס זמני היום - קומפקטי עם הזמן הבא נעוץ -->
-      <div class="card smart-clock-card" style="padding: 8px 12px; cursor:pointer;" onclick="navigate('zmanim')" title="לחץ לזמני היום המלאים">
-        ${next ? `<div class="zmanim-pinned-next">
+      <div class="card" style="order:3; display:flex; flex-direction:column; cursor:pointer;" onclick="navigate('zmanim')" title="לחץ לזמני היום המלאים">
+        <div class="card-title">${icon('clock')} זמני היום</div>
+        ${next ? `<div class="zmanim-next-row">
           <span class="name">${next.name}</span>
           <span class="time">${next.time.toLocaleTimeString('he-IL', {hour:'2-digit', minute:'2-digit'})}</span>
         </div>
-        <div id="smart-clock-time" style="font-size:13px; color:var(--gold); font-feature-settings:'tnum'; text-align:center; margin-top:2px; letter-spacing:0.5px;">--:--:--</div>` : ''}
+        <div id="smart-clock-time" style="font-size:12px; color:var(--text-muted); font-feature-settings:'tnum'; text-align:center; margin-top:2px; letter-spacing:0.5px;">--:--:--</div>` : ''}
 
-        <div class="zmanim-scroll">
+        <div class="zmanim-scroll" style="flex:1; overflow-y:auto; min-height:0; margin-top:6px;">
           ${(() => {
             const z = getZmanim() || {};
             const nowD = new Date();
@@ -3819,14 +3847,14 @@ VIEW_RENDERERS.home = (root) => {
           }
           const allBadges = [...todayHolidays.map(h => h.name), ...extraBadges];
           if (allBadges.length === 0) return '';
-          return `<div style="flex-shrink:0; margin-top:6px; padding-top:6px; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:4px;">
-            ${allBadges.map(txt => `<div class="badge badge-gold" style="font-size:13px; padding:5px 10px;">${txt}</div>`).join('')}
+          return `<div style="flex-shrink:0; margin-top:6px; padding-top:6px; border-top:1px solid var(--border); display:flex; flex-wrap:nowrap; gap:4px; justify-content:center; align-items:center;">
+            ${allBadges.map(txt => `<div class="badge badge-gold" style="font-size:11px; padding:4px 7px; white-space:nowrap; flex-shrink:1; min-width:0; overflow:hidden; text-overflow:ellipsis;">${txt}</div>`).join('')}
           </div>`;
         })()}
       </div>
 
       <!-- שעון אנלוגי במרכז -->
-      <div class="card analog-clock-wrap" style="cursor:pointer;" onclick="navigate('calendar')" title="לחץ ללוח השנה">
+      <div class="card analog-clock-wrap" style="order:2; cursor:pointer;" onclick="navigate('calendar')" title="לחץ ללוח השנה">
         <div class="analog-clock">
           <svg viewBox="0 0 200 200" id="analog-svg">
             <circle cx="100" cy="100" r="95" class="clock-face"/>
@@ -3843,7 +3871,7 @@ VIEW_RENDERERS.home = (root) => {
       </div>
 
       <!-- תזכורות הלכתיות + רשימות ערב שבת/חג -->
-      <div class="card" style="display:flex; flex-direction:column;">
+      <div class="card" style="order:1; display:flex; flex-direction:column;">
         <div class="card-title">${icon('book')} תזכורות יומיות</div>
         <div style="margin-top: 6px; flex: 1; overflow-y: auto;">
           ${reminders.length > 0 ? reminders.map(r => `
@@ -4464,7 +4492,7 @@ VIEW_RENDERERS.zmanim = (root) => {
         </div>`;
       }).join('')}</div>` : '<div class="empty-state">טוען זמנים...</div>'}
 
-      <div style="margin-top: 16px; padding: 14px; background: var(--bg-secondary); border-radius: 8px; font-size: 14px; color: var(--text-secondary); line-height: 1.7;">
+      <div class="zmanim-legend" style="margin-top: 16px; padding: 14px; background: var(--bg-secondary); border-radius: 8px; font-size: 14px; color: var(--text-secondary); line-height: 1.7;">
         <div style="margin-bottom: 6px;"><span style="display:inline-block; width:14px; height:14px; background: var(--gold); border-radius:3px; vertical-align:middle; margin-left: 8px;"></span> הזמן הבא היום</div>
         <div><span style="display:inline-block; width:14px; height:14px; background: var(--bg-tertiary); border-radius:3px; vertical-align:middle; margin-left: 8px; opacity:0.5;"></span> זמנים שעברו (כהים)</div>
       </div>
@@ -6048,11 +6076,22 @@ VIEW_RENDERERS.yahrzeits = (root) => {
           return `
           <div class="birthday-card yahrzeit">
             ${y.daysUntil !== null ? `<div class="birthday-countdown">${y.daysUntil === 0 ? 'היום' : `בעוד ${y.daysUntil} ימים`}</div>` : ''}
-            <div class="birthday-name">לעילוי נשמת ${esc(y.name)}${y.relation ? ` · ${esc(y.relation)}` : ''}${yearsAgo ? ` · ${yearsAgo} שנים מהפטירה` : ''}</div>
+            <div class="birthday-name">לעילוי נשמת ${esc(y.name)}${y.fatherName ? ` בן ${esc(y.fatherName)}` : ''}${y.relation ? ` · ${esc(y.relation)}` : ''}${yearsAgo ? ` · ${yearsAgo} שנים מהפטירה` : ''}</div>
             <div class="birthday-date">
               תאריך פטירה: ${hebDateStr}
               ${y.nextDate ? ` · השנה יחול: ${y.nextDate.toLocaleDateString('he-IL', {weekday:'long', day:'numeric', month:'long', year:'numeric'})}` : ''}
             </div>
+            ${(() => {
+              const b = y.burial || {};
+              const parts = [];
+              if (b.cemetery) parts.push(esc(b.cemetery));
+              const loc = [
+                b.area && `אזור ${esc(b.area)}`, b.block && `גוש ${esc(b.block)}`,
+                b.plot && `חלקה ${esc(b.plot)}`, b.row && `שורה ${esc(b.row)}`, b.spot && `מקום ${esc(b.spot)}`
+              ].filter(Boolean).join(' · ');
+              if (loc) parts.push(loc);
+              return parts.length ? `<div class="birthday-date" style="margin-top:4px; display:flex; align-items:center; gap:5px;">${icon('pin', 13)} ${parts.join(' — ')}</div>` : '';
+            })()}
             <div style="position:absolute; bottom:8px; left:12px; display:flex; gap:6px;">
               <button class="btn btn-icon btn-sm" onclick="editYahrzeit('${y.id}')">${icon('edit', 14)}</button>
               <button class="btn btn-icon btn-sm btn-danger" onclick="deleteYahrzeit('${y.id}')">${icon('trash', 14)}</button>
@@ -6076,6 +6115,7 @@ function addYahrzeit(existing, prefill) {
   }).join('');
   openModal(existing ? 'עריכת יארצייט' : 'הוספת יארצייט', `
     <div class="form-group"><label class="form-label">שם הנפטר ז"ל</label><input type="text" id="yz-name" value="${esc(y.name||'')}"></div>
+    <div class="form-group"><label class="form-label">שם האב</label><input type="text" id="yz-father" value="${esc(y.fatherName||'')}" placeholder="לנוסח 'בן ...' באזכרה"></div>
     <div class="form-group"><label class="form-label">קרבה (סבא, סבתא וכו')</label><input type="text" id="yz-relation" value="${esc(y.relation||'')}"></div>
     <div class="form-group">
       <label class="form-label">תאריך פטירה (לועזי) — היארצייט יחזור באותו תאריך עברי</label>
@@ -6102,13 +6142,33 @@ function addYahrzeit(existing, prefill) {
       </div>
       <div id="yz-heb-display" style="margin-top:6px; font-size:13px; color:var(--gold); font-family: 'Heebo', sans-serif;"></div>
     </div>
+    <div class="form-group">
+      <label class="form-label">מקום הקבורה</label>
+      <input type="text" id="yz-cemetery" value="${esc((y.burial&&y.burial.cemetery)||'')}" placeholder="בית עלמין (למשל: הר המנוחות, ירושלים)" style="margin-bottom:8px;">
+      <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+        <input type="text" id="yz-bur-area" value="${esc((y.burial&&y.burial.area)||'')}" placeholder="אזור">
+        <input type="text" id="yz-bur-block" value="${esc((y.burial&&y.burial.block)||'')}" placeholder="גוש">
+        <input type="text" id="yz-bur-plot" value="${esc((y.burial&&y.burial.plot)||'')}" placeholder="חלקה">
+        <input type="text" id="yz-bur-row" value="${esc((y.burial&&y.burial.row)||'')}" placeholder="שורה">
+        <input type="text" id="yz-bur-spot" value="${esc((y.burial&&y.burial.spot)||'')}" placeholder="מקום">
+      </div>
+    </div>
   `, () => {
     y.name = document.getElementById('yz-name').value.trim();
+    y.fatherName = document.getElementById('yz-father').value.trim();
     y.date = document.getElementById('yz-date').value;
     y.relation = document.getElementById('yz-relation').value.trim();
     y.hebDay = parseInt(document.getElementById('yz-heb-day').value) || null;
     y.hebMonth = document.getElementById('yz-heb-month').value || null;
     y.hebYear = parseInt(document.getElementById('yz-heb-year').value) || null;
+    y.burial = {
+      cemetery: document.getElementById('yz-cemetery').value.trim(),
+      area: document.getElementById('yz-bur-area').value.trim(),
+      block: document.getElementById('yz-bur-block').value.trim(),
+      plot: document.getElementById('yz-bur-plot').value.trim(),
+      row: document.getElementById('yz-bur-row').value.trim(),
+      spot: document.getElementById('yz-bur-spot').value.trim()
+    };
     if (!y.name || !y.date) { toast('יש למלא שם ותאריך', 'danger'); return false; }
     if (!existing) State.yahrzeits.push(y);
     saveState();
@@ -6357,13 +6417,13 @@ function toggleTask(id) {
   if (t) { t.done = !t.done; saveState(); renderView(); }
 }
 async function deleteTask(id) {
-  if (!requireAdmin(() => deleteTask(id))) return;
+  // מחיקת משימה פתוחה לכולם — ללא סיסמת מנהל (בכוונה)
   if (!(await appConfirm('למחוק?'))) return;
   State.tasks = State.tasks.filter(x => x.id !== id);
   saveState(); renderView();
 }
 async function clearCompletedTasks() {
-  if (!requireAdmin(() => clearCompletedTasks())) return;
+  // מחיקת המשימות שבוצעו פתוחה לכולם — ללא סיסמת מנהל (בכוונה)
   if (!(await appConfirm('למחוק את כל המשימות שבוצעו?'))) return;
   State.tasks = State.tasks.filter(t => !t.done);
   saveState(); renderView();
