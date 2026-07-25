@@ -234,7 +234,7 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   .home-row-top { flex: 0 0 auto; height: 420px; max-height: 50vh; }
   .home-row-top > .card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .home-row-stats { flex: 0 0 auto; }
-  .home-row-widgets { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .home-row-widgets { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
   .home-row-widgets .card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .home-row-widgets .card > .card-header { flex-shrink: 0; }
   .home-row-widgets .card > div:not(.card-header) { flex: 1; overflow-y: auto; min-height: 0; }
@@ -3896,7 +3896,7 @@ function getWeekAgenda(days = 7) {
     (getUpcomingBirthdays(days) || []).forEach(b => {
       const off = offsetOf(b.date);
       if (off < 0) return;
-      buckets[off].items.push({ kind: 'birthday', icon: 'cake', text: 'יום הולדת · ' + b.name, sub: (b.age != null ? 'גיל ' + b.age : '') });
+      buckets[off].items.push({ kind: 'birthday', id: b.id, icon: 'cake', text: 'יום הולדת · ' + b.name, sub: (b.age != null ? 'גיל ' + b.age : '') });
     });
   } catch (e) {}
   // יארצייט
@@ -3904,21 +3904,21 @@ function getWeekAgenda(days = 7) {
     (getUpcomingYahrzeits(days) || []).forEach(y => {
       const off = offsetOf(y.nextDate);
       if (off < 0) return;
-      buckets[off].items.push({ kind: 'yahrzeit', icon: 'candle', text: 'יארצייט · ' + y.name, sub: y.hebStr || '' });
+      buckets[off].items.push({ kind: 'yahrzeit', id: y.id, icon: 'candle', text: 'יארצייט · ' + y.name, sub: y.hebStr || '' });
     });
   } catch (e) {}
   // אירועים
   (State.events || []).forEach(e => {
     const off = offsetOf(e.date);
     if (off < 0) return;
-    buckets[off].items.push({ kind: 'event', icon: 'calendar', text: e.title, sub: [e.time, e.location].filter(Boolean).join(' · '), time: e.time || '' });
+    buckets[off].items.push({ kind: 'event', id: e.id, icon: 'calendar', text: e.title, sub: [e.time, e.location].filter(Boolean).join(' · '), time: e.time || '' });
   });
   // משימות עם תאריך יעד (שלא הושלמו)
   (State.tasks || []).forEach(t => {
     if (t.done || !t.dueDate) return;
     const off = offsetOf(t.dueDate);
     if (off < 0) return;
-    buckets[off].items.push({ kind: 'task', icon: 'check', text: t.title, sub: 'משימה' });
+    buckets[off].items.push({ kind: 'task', id: t.id, icon: 'check', text: t.title, sub: 'משימה' });
   });
   const order = { holiday: 0, event: 1, birthday: 2, yahrzeit: 3, task: 4 };
   buckets.forEach(bk => bk.items.sort((a, b) => {
@@ -4058,17 +4058,21 @@ VIEW_RENDERERS.home = (root) => {
               return prepLists.length === 0 ? '<div class="empty-state" style="padding:14px 8px;">אין תזכורות מיוחדות לשבוע הקרוב</div>' : '';
             }
             const kindColor = { holiday: 'var(--gold)', birthday: '#87c4a4', yahrzeit: 'var(--text-secondary)', event: 'var(--accent-light)', task: '#d9a0ab', halacha: 'var(--gold-light)' };
+            // לחיצה על פריט פותחת אותו לעריכה (משימה/אירוע/יום הולדת/יארצייט)
+            const openFn = { task: 'editTask', event: 'editEvent', birthday: 'editBirthday', yahrzeit: 'editYahrzeit' };
             return agenda.map(bk => `
               <div class="agenda-day-head">${agendaDayLabel(bk.offset, bk.date)}</div>
-              ${bk.items.map(it => `
-                <div class="agenda-item">
+              ${bk.items.map(it => {
+                const clickable = it.id && openFn[it.kind];
+                return `
+                <div class="agenda-item"${clickable ? ` onclick="${openFn[it.kind]}('${it.id}')" style="cursor:pointer;"` : ''}>
                   <span class="agenda-icon" style="color:${kindColor[it.kind] || 'var(--text-muted)'};">${icon(it.icon, 14)}</span>
                   <div class="agenda-text">
                     <div class="agenda-title">${esc(it.text)}</div>
                     ${it.sub ? `<div class="agenda-sub">${esc(it.sub)}</div>` : ''}
                   </div>
                 </div>
-              `).join('')}
+              `;}).join('')}
             `).join('');
           })()}
           ${prepLists.map(list => {
@@ -4164,6 +4168,28 @@ VIEW_RENDERERS.home = (root) => {
               ${t.priority === 'high' ? '<span class="badge badge-danger" style="font-size:9px;">דחוף</span>' : ''}
             </div>
           `).join('') : '<div class="empty-state" style="padding:12px 8px;">אין משימות פתוחות</div>'}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">${icon('cart')} קניות</div>
+          <button class="btn btn-sm" onclick="navigate('shopping')">←</button>
+        </div>
+        <div>
+          ${(() => {
+            const rows = [];
+            (State.shoppingLists||[]).forEach(list => {
+              (list.items||[]).forEach((it, idx) => { if (!it.done) rows.push({ listId: list.id, listName: list.name, text: it.text, idx }); });
+            });
+            if (rows.length === 0) return '<div class="empty-state" style="padding:12px 8px;">אין פריטים לקנייה</div>';
+            return rows.slice(0, 20).map(r => `
+              <div class="check-item" style="padding:5px 10px;">
+                <input type="checkbox" onclick="toggleShoppingItem('${r.listId}', ${r.idx})" style="cursor:pointer;">
+                <div class="check-text" style="flex:1;">${esc(r.text)}${r.listName ? ` <span style="font-size:9px; color:var(--text-muted);">· ${esc(r.listName)}</span>` : ''}</div>
+              </div>
+            `).join('');
+          })()}
         </div>
       </div>
     </div>
