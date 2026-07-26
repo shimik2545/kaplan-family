@@ -2336,7 +2336,7 @@ const CONFIG = {
 
 // גרסת האפליקציה — מודבקת לתוך ה-bundle. הבאנר "יצאה גרסה חדשה" משווה אותה
 // לגרסה שבשרת (version.json). בכל פריסה חדשה — להעלות את המספר גם כאן וגם ב-version.json.
-const APP_VERSION = 'V01.04.00';
+const APP_VERSION = 'V01.05.00';
 
 // ============ ICONS (SVG, line style) ============
 const ICONS = {
@@ -8876,7 +8876,7 @@ function initCloud() {
       if (cloudSession) { updateCloudUI(); cloudSyncNow(true); }
     });
     sb.auth.onAuthStateChange((_ev, session) => { cloudSession = session; updateCloudUI(); updateSyncIndicator(); });
-    window.addEventListener('online', () => { updateSyncIndicator(); if (cloudSession) cloudPush('חזרה לרשת'); });
+    window.addEventListener('online', () => { updateSyncIndicator(); if (cloudSession) cloudSyncNow(true); });
     window.addEventListener('offline', () => { updateSyncIndicator(); });
     updateSyncIndicator();
   } catch (e) { console.error('initCloud failed', e); }
@@ -8955,25 +8955,45 @@ async function cloudSyncNow(silent) {
     if (!silent) toast('הנתונים נטענו מהענן', 'success');
     renderView(); return;
   }
-  // בשני הצדדים יש נתונים — המאוחר לפי חותמת זמן מנצח (עם גיבוי לפני דריסה).
+  // בשני הצדדים יש נתונים — מיזוג בטוח (אופליין-פירסט):
+  // שינויים מקומיים שטרם הועלו לעולם לא נדרסים. מושכים מהענן רק אם הוא התקדם
+  // מעבר לגרסה שקיבלנו לאחרונה, ואין שינויים מקומיים שממתינים להעלאה.
   const localT = m.localUpdatedAt ? new RealDate(m.localUpdatedAt).getTime() : 0;
   const remoteT = remote.updated_at ? new RealDate(remote.updated_at).getTime() : 0;
-  if (remoteT > localT) {
+  const lastServerT = m.lastServerUpdatedAt ? new RealDate(m.lastServerUpdatedAt).getTime() : 0;
+  const hasPendingLocal = localT > lastServerT;   // שינויים מקומיים שלא הועלו
+  const remoteAdvanced = remoteT > lastServerT;   // הענן התעדכן ממכשיר אחר
+
+  if (hasPendingLocal) {
+    // יש עריכות מקומיות שטרם עלו — הן מנצחות תמיד (העלאה). בקונפליקט אמיתי — גיבוי ליתר ביטחון.
+    if (remoteAdvanced) makeAutoBackup('מיזוג: שינויים מקומיים גוברים על עדכון מהענן');
+    if (await cloudPush('העלאת שינויים מקומיים') && !silent) toast('השינויים המקומיים הועלו לענן', 'success');
+  } else if (remoteAdvanced) {
+    // אין שינויים מקומיים ממתינים, והענן התקדם — נמשוך (עם גיבוי).
     makeAutoBackup('לפני משיכה מהענן');
     applyStateData(remote.data || {});
     m.lastServerUpdatedAt = remote.updated_at; setCloudMeta(m);
     if (!silent) toast('עודכן מהענן (גרסה חדשה יותר)', 'success');
     renderView();
   } else {
-    if (await cloudPush('עדכון הענן') && !silent) toast('הענן עודכן מהמכשיר', 'success');
+    // שני הצדדים כבר מסונכרנים — אין צורך להעלות מחדש.
+    if (!silent) toast('הכל מסונכרן', 'success');
+    updateSyncIndicator();
   }
 }
 
 // נקרא אחרי כל שמירה מקומית — דוחף לענן בהשהיה קצרה (איגום שינויים)
 function scheduleCloudPush() {
+  // תמיד מסמנים שהיו שינויים מקומיים — גם באופליין וגם ללא חשבון ענן.
+  // קריטי: כך העריכות המקומיות תמיד "מנצחות" בסנכרון הבא ולא נדרסות ע"י הענן.
+  try {
+    const m = getCloudMeta();
+    m.localUpdatedAt = new RealDate().toISOString();
+    setCloudMeta(m);
+  } catch (e) { console.error('scheduleCloudPush meta', e); }
+  if (typeof updateSyncIndicator === 'function') updateSyncIndicator();
+  // דחיפה בפועל לרשת רק אם יש חיבור לחשבון ולקוח ענן פעיל
   if (!sb || !cloudSession) return;
-  const m = getCloudMeta(); m.localUpdatedAt = new RealDate().toISOString(); setCloudMeta(m);
-  updateSyncIndicator();
   if (_cloudPushTimer) clearTimeout(_cloudPushTimer);
   _cloudPushTimer = setTimeout(() => { cloudPush('שמירה אוטומטית'); }, 2500);
 }

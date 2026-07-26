@@ -4,7 +4,7 @@
    - מסמך ה-HTML: רשת-תחילה (כדי לקבל עדכונים), נפילה למטמון באופליין.
    - שאר הקבצים (תמונות/אייקונים): מטמון-תחילה.
 */
-const CACHE = 'beithaim-v1';
+const CACHE = 'beithaim-v2';
 const ASSETS = [
   './',
   './index.html',
