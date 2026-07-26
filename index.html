@@ -5191,11 +5191,19 @@ function addFamilyMember(existing) {
   // אופציות לבחירת בן/בת זוג והורים - רק בני משפחה אחרים
   const otherMembers = State.family.filter(m => m.id !== f.id);
   const spouseOpts = otherMembers.map(m => `<option value="${m.id}" ${f.spouseId === m.id ? 'selected' : ''}>${esc(m.name)}${m.relation?' ('+esc(m.relation)+')':''}</option>`).join('');
-  const parentChecks = otherMembers.map(m => `
-    <label style="display:flex; align-items:center; gap:6px; padding:5px 8px; background:var(--bg-tertiary); border-radius:6px; cursor:pointer; font-size:12px;">
-      <input type="checkbox" class="fm-parent-check" value="${m.id}" ${f.parentIds.includes(m.id) ? 'checked' : ''}>
-      ${esc(m.name)}${m.relation?' · '+esc(m.relation):''}
-    </label>`).join('');
+  // המשפחה (יחידה) שאליה בן המשפחה משויך כילד - לבחירה מרשימת המשפחות
+  // מזהה לפי childrenIds, ואם אין - לפי התאמת ההורים (למשל בעת "הוסף ילד חדש" מתוך משפחה)
+  const currentFam = State.families.find(fm => (fm.childrenIds || []).includes(f.id))
+    || ((f.parentIds && f.parentIds.length) ? State.families.find(fm =>
+        [fm.parent1Id, fm.parent2Id].filter(Boolean).some(pid => f.parentIds.includes(pid))
+      ) : null);
+  const currentFamId = currentFam ? currentFam.id : '';
+  const familyOpts = State.families.map(fm => {
+    const fp1 = fm.parent1Id ? State.family.find(m => m.id === fm.parent1Id) : null;
+    const fp2 = fm.parent2Id ? State.family.find(m => m.id === fm.parent2Id) : null;
+    const label = combineParentNames(fp1 && fp1.name, fp2 && fp2.name) || fm.name || 'משפחה';
+    return `<option value="${fm.id}" ${currentFamId === fm.id ? 'selected' : ''}>${esc(label)}</option>`;
+  }).join('');
 
   openModal(existing ? 'עריכת בן משפחה' : 'הוספת בן משפחה', `
     <div class="form-group"><label class="form-label">שם פרטי</label><input type="text" id="fm-name" value="${esc(f.name)}"></div>
@@ -5243,13 +5251,17 @@ function addFamilyMember(existing) {
         ${spouseOpts}
       </select>
     </div>
+    ` : ''}
+    ${State.families.length > 0 ? `
     <div class="form-group">
-      <label class="form-label">הורים (סמן את ההורים מתוך בני המשפחה)</label>
-      <div id="fm-parents-list" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">
-        ${parentChecks}
-      </div>
+      <label class="form-label">משפחה (בחר לאיזו משפחה לשייך את בן המשפחה)</label>
+      <select id="fm-family">
+        <option value="">- ללא / לא משויך למשפחה -</option>
+        ${familyOpts}
+      </select>
+      <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">בן המשפחה יתווסף כילד למשפחה שנבחרה, וההורים ייקבעו אוטומטית לפי הורי המשפחה.</div>
     </div>
-    ` : '<div style="font-size:11px; color:var(--text-muted); margin-bottom:14px;">קישור לבן/בת זוג והורים יהיה זמין לאחר הוספת בני משפחה נוספים</div>'}
+    ` : '<div style="font-size:11px; color:var(--text-muted); margin-bottom:14px;">כדי לשייך למשפחה, צור תחילה יחידת משפחה במסך "משפחות".</div>'}
 
     <div class="form-group"><label class="form-label">טלפון</label><input type="tel" id="fm-phone" value="${esc(f.phone || '')}"></div>
     <div class="form-group"><label class="form-label">הערות</label><textarea id="fm-notes">${esc(f.notes || '')}</textarea></div>
@@ -5268,8 +5280,11 @@ function addFamilyMember(existing) {
     f.notes = document.getElementById('fm-notes').value.trim();
     const spouseSel = document.getElementById('fm-spouse');
     f.spouseId = spouseSel ? spouseSel.value : '';
-    const parentChecks = document.querySelectorAll('.fm-parent-check:checked');
-    f.parentIds = Array.from(parentChecks).map(c => c.value);
+    // המשפחה שנבחרה מהרשימה - קובעת את ההורים אוטומטית
+    const famSel = document.getElementById('fm-family');
+    const selectedFamId = famSel ? famSel.value : '';
+    const selectedUnit = selectedFamId ? State.families.find(fm => fm.id === selectedFamId) : null;
+    f.parentIds = selectedUnit ? [selectedUnit.parent1Id, selectedUnit.parent2Id].filter(Boolean) : [];
 
     if (!existing) State.family.push(f);
 
@@ -5278,7 +5293,7 @@ function addFamilyMember(existing) {
       const spouse = State.family.find(m => m.id === f.spouseId);
       if (spouse) spouse.spouseId = f.id;
     }
-    // ההורים שנבחרו - הוסף את הילד שלהם
+    // עדכון childrenIds אצל ההורים (לפי הורי המשפחה שנבחרה)
     State.family.forEach(m => {
       if (!m.childrenIds) m.childrenIds = [];
       if (f.parentIds.includes(m.id)) {
@@ -5288,37 +5303,15 @@ function addFamilyMember(existing) {
       }
     });
 
-    // סנכרון ליחידות המשפחה (מסך "משפחות") - שהילד יופיע במשפחת ההורים שנבחרו
-    if (f.parentIds.length > 0) {
-      // העדף יחידה ששני ההורים שנבחרו הם ההורים שלה; אחרת יחידה עם אחד מהם
-      let unit = State.families.find(fam =>
-        f.parentIds.includes(fam.parent1Id) && f.parentIds.includes(fam.parent2Id)
-      ) || State.families.find(fam =>
-        f.parentIds.includes(fam.parent1Id) || f.parentIds.includes(fam.parent2Id)
-      );
-      if (!unit) {
-        const p1 = State.family.find(m => m.id === f.parentIds[0]);
-        const p2 = f.parentIds[1] ? State.family.find(m => m.id === f.parentIds[1]) : null;
-        unit = {
-          id: Date.now().toString() + '-u',
-          name: p1 && p2 ? `${p1.name} ו${p2.name}` : (p1 ? p1.name : 'משפחה'),
-          parent1Id: f.parentIds[0] || '',
-          parent2Id: f.parentIds[1] || '',
-          childrenIds: []
-        };
-        State.families.push(unit);
-      }
-      if (!unit.childrenIds) unit.childrenIds = [];
-      if (!unit.childrenIds.includes(f.id)) unit.childrenIds.push(f.id);
-      // הסר מיחידות אחרות שההורים שלהן כבר לא ההורים של הילד
-      State.families.forEach(fam => {
-        if (fam === unit || !fam.childrenIds || !fam.childrenIds.includes(f.id)) return;
-        const famParents = [fam.parent1Id, fam.parent2Id].filter(Boolean);
-        if (famParents.length > 0 && !famParents.some(pid => f.parentIds.includes(pid))) {
-          fam.childrenIds = fam.childrenIds.filter(cid => cid !== f.id);
-        }
-      });
+    // שיוך בן המשפחה כילד ליחידת המשפחה שנבחרה, והסרה מכל יחידה אחרת
+    if (selectedUnit) {
+      if (!selectedUnit.childrenIds) selectedUnit.childrenIds = [];
+      if (!selectedUnit.childrenIds.includes(f.id)) selectedUnit.childrenIds.push(f.id);
     }
+    State.families.forEach(fam => {
+      if (selectedUnit && fam.id === selectedUnit.id) return;
+      if (fam.childrenIds) fam.childrenIds = fam.childrenIds.filter(cid => cid !== f.id);
+    });
 
     // עדכן/הוסף יום הולדת
     let bd = State.birthdays.find(b => b.familyId === f.id);
@@ -5967,6 +5960,26 @@ function openFamilyDetailsModal(famId) {
     m.id !== fam.parent1Id && m.id !== fam.parent2Id && !(fam.childrenIds||[]).includes(m.id)
   );
 
+  // כרטיס בן משפחה בודד (משמש להורים) - בסגנון זהה לכרטיסי הילדים
+  const parentCard = (m) => {
+    if (!m) return '';
+    const heb = m.birthday ? gregToHebrew(new Date(m.birthday)) : null;
+    const age = m.birthday ? new Date().getFullYear() - new Date(m.birthday).getFullYear() : null;
+    return `
+      <div class="list-item">
+        <div class="list-item-content">
+          <div class="list-item-title">${esc(m.name)}${m.relation ? ' <span class="badge badge-info">'+esc(m.relation)+'</span>' : ''}${age!==null ? ' <span class="badge">'+age+'</span>' : ''}</div>
+          <div class="list-item-subtitle">${m.birthday ? new Date(m.birthday).toLocaleDateString('he-IL') + (heb ? ' · ' + heb.formatted : '') : 'אין תאריך לידה'}${m.phone ? ' · ' + esc(m.phone) : ''}</div>
+        </div>
+        <div class="list-item-actions">
+          <button class="btn btn-icon btn-sm" onclick="closeModal(); editFamilyMember('${m.id}'); window._reopenFamilyDetails='${famId}';">${icon('edit', 14)}</button>
+        </div>
+      </div>`;
+  };
+  const parentsHtml = (p1 || p2)
+    ? (parentCard(p1) + parentCard(p2))
+    : '<div class="empty-state" style="padding:14px;">לא הוגדרו הורים למשפחה זו</div>';
+
   const childrenHtml = children.length === 0
     ? '<div class="empty-state" style="padding:20px;">עדיין אין ילדים במשפחה</div>'
     : children.map(c => {
@@ -6001,6 +6014,11 @@ function openFamilyDetailsModal(famId) {
     <div style="padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid var(--border);">
       <div style="font-family: 'Heebo', sans-serif; font-size: 22px; color: var(--gold); margin-bottom: 4px;">${esc(combineParentNames(p1 && p1.name, p2 && p2.name)) || 'ללא הורים מוגדרים'}</div>
       <div style="font-size: 12px; color: var(--text-muted);">${fam.name || ''} · ${children.length} ${children.length === 1 ? 'ילד' : 'ילדים'}</div>
+    </div>
+
+    <div class="subheading" style="margin-bottom: 8px;">${icon('users', 14)} הורים</div>
+    <div style="margin-bottom: 16px;">
+      ${parentsHtml}
     </div>
 
     <div class="subheading" style="margin-bottom: 8px;">${icon('users', 14)} ילדים</div>
