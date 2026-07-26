@@ -321,6 +321,19 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     color: var(--text-primary);
     letter-spacing: 0.5px;
   }
+  /* חיווי סנכרון לענן - נקודה משמאל לשעון */
+  .topbar-clock-wrap { display: flex; align-items: center; gap: 8px; }
+  .sync-dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    background: var(--text-muted);
+    flex-shrink: 0;
+    transition: background .3s ease, box-shadow .3s ease;
+    cursor: default;
+  }
+  .sync-dot.synced { background: #22c55e; box-shadow: 0 0 7px rgba(34,197,94,0.75); }
+  .sync-dot.pending { background: #f59e0b; box-shadow: 0 0 7px rgba(245,158,11,0.75); animation: syncPulse 1.2s ease-in-out infinite; }
+  .sync-dot.error { background: #ef4444; box-shadow: 0 0 7px rgba(239,68,68,0.75); }
+  @keyframes syncPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
   .topbar-clock-ny {
     display: flex;
     align-items: center;
@@ -2161,7 +2174,10 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
         <span class="ny-label">ארה״ב</span>
         <span id="topbar-clock-ny-time">--:--</span>
       </div>
-      <div class="topbar-clock" id="topbar-clock">--:--:--</div>
+      <div class="topbar-clock-wrap">
+        <div class="topbar-clock" id="topbar-clock">--:--:--</div>
+        <span class="sync-dot" id="topbar-sync" title="מצב סנכרון לענן"></span>
+      </div>
     </div>
 
     <div id="view"></div>
@@ -3813,6 +3829,7 @@ function updateTopbar() {
     nyEl.textContent = `${nyTime} · ${nyPart}`;
   }
   updateTopbarStats();
+  if (typeof updateSyncIndicator === 'function') updateSyncIndicator();
 }
 // מטמון יומי לסטטיסטיקות שמחייבות חישובי hebcal כבדים
 let _statsCache = { dateKey: '', bdayCount: 0, eventCount: 0, taskCount: 0, familyCount: 0 };
@@ -8806,6 +8823,8 @@ const CLOUD = {
 let sb = null;                 // לקוח Supabase
 let cloudSession = null;       // מושב מחובר נוכחי
 let _cloudPushTimer = null;
+let cloudPushing = false;      // האם כרגע מתבצעת העלאה לענן
+let cloudLastError = false;    // האם ההעלאה האחרונה נכשלה
 
 function getCloudMeta() { return Store.get('cloudMeta', { localUpdatedAt: null, lastServerUpdatedAt: null }); }
 function setCloudMeta(m) { Store.set('cloudMeta', m); }
@@ -8838,9 +8857,33 @@ function initCloud() {
       cloudSession = data && data.session ? data.session : null;
       if (cloudSession) { updateCloudUI(); cloudSyncNow(true); }
     });
-    sb.auth.onAuthStateChange((_ev, session) => { cloudSession = session; updateCloudUI(); });
-    window.addEventListener('online', () => { if (cloudSession) cloudPush('חזרה לרשת'); });
+    sb.auth.onAuthStateChange((_ev, session) => { cloudSession = session; updateCloudUI(); updateSyncIndicator(); });
+    window.addEventListener('online', () => { updateSyncIndicator(); if (cloudSession) cloudPush('חזרה לרשת'); });
+    window.addEventListener('offline', () => { updateSyncIndicator(); });
+    updateSyncIndicator();
   } catch (e) { console.error('initCloud failed', e); }
+}
+
+// ============ חיווי סנכרון בטופ-בר (נקודה ירוקה/כתומה/אדומה משמאל לשעון) ============
+function computeSyncState() {
+  if (!navigator.onLine) return { s: 'error', t: 'אין חיבור לרשת — הנתונים נשמרים מקומית ולא עלו לענן' };
+  if (!sb || !cloudSession) return { s: 'error', t: 'לא מחובר לענן — הנתונים נשמרים מקומית בלבד' };
+  if (cloudPushing) return { s: 'pending', t: 'מעלה נתונים לענן…' };
+  if (cloudLastError) return { s: 'error', t: 'העלאת הנתונים לענן נכשלה — ינסה שוב' };
+  const m = getCloudMeta();
+  const localT = m.localUpdatedAt ? new RealDate(m.localUpdatedAt).getTime() : 0;
+  const serverT = m.lastServerUpdatedAt ? new RealDate(m.lastServerUpdatedAt).getTime() : 0;
+  if (!m.lastServerUpdatedAt || localT > serverT) return { s: 'pending', t: 'יש שינויים שממתינים להעלאה לענן' };
+  return { s: 'synced', t: 'הנתונים מסונכרנים ומגובים בענן ✓' };
+}
+
+function updateSyncIndicator() {
+  const el = document.getElementById('topbar-sync');
+  if (!el) return;
+  const { s, t } = computeSyncState();
+  el.classList.remove('synced', 'pending', 'error');
+  el.classList.add(s);
+  el.title = t;
 }
 
 async function cloudPull() {
@@ -8853,14 +8896,21 @@ async function cloudPull() {
 
 async function cloudPush(reason) {
   if (!sb || !cloudSession) return false;
+  cloudPushing = true; updateSyncIndicator();
   const now = new RealDate().toISOString();
   const { error } = await sb.from('household_state').upsert(
     { user_id: cloudSession.user.id, data: collectStateData(), updated_at: now },
     { onConflict: 'user_id' }
   );
-  if (error) { console.error('cloudPush', error); toast('סנכרון לענן נכשל', 'danger'); return false; }
+  if (error) {
+    console.error('cloudPush', error); toast('סנכרון לענן נכשל', 'danger');
+    cloudPushing = false; cloudLastError = true; updateSyncIndicator();
+    return false;
+  }
   const m = getCloudMeta(); m.lastServerUpdatedAt = now; m.localUpdatedAt = now; setCloudMeta(m);
+  cloudPushing = false; cloudLastError = false;
   updateCloudUI();
+  updateSyncIndicator();
   return true;
 }
 
@@ -8905,6 +8955,7 @@ async function cloudSyncNow(silent) {
 function scheduleCloudPush() {
   if (!sb || !cloudSession) return;
   const m = getCloudMeta(); m.localUpdatedAt = new RealDate().toISOString(); setCloudMeta(m);
+  updateSyncIndicator();
   if (_cloudPushTimer) clearTimeout(_cloudPushTimer);
   _cloudPushTimer = setTimeout(() => { cloudPush('שמירה אוטומטית'); }, 2500);
 }
