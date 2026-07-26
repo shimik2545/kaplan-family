@@ -148,6 +148,13 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     margin-top: 2px;
     letter-spacing: 0.3px;
   }
+  .logo p.logo-version {
+    margin-top: 6px;
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-feature-settings: 'tnum';
+    letter-spacing: 0.5px;
+  }
 
   .nav-item {
     display: flex;
@@ -2153,6 +2160,7 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
     <div class="logo">
       <h1>ניהול הבית</h1>
       <p>מערכת משפחתית חכמה</p>
+      <p class="logo-version" id="logo-version"></p>
     </div>
     <nav id="nav"></nav>
   </aside>
@@ -2336,7 +2344,9 @@ const CONFIG = {
 
 // גרסת האפליקציה — מודבקת לתוך ה-bundle. הבאנר "יצאה גרסה חדשה" משווה אותה
 // לגרסה שבשרת (version.json). בכל פריסה חדשה — להעלות את המספר גם כאן וגם ב-version.json.
-const APP_VERSION = 'V01.05.00';
+const APP_VERSION = 'V01.05.01';
+// הצגת מספר הגרסה בלוגו שבסרגל הצד
+try { const _lv = document.getElementById('logo-version'); if (_lv) _lv.textContent = 'גרסה ' + APP_VERSION; } catch (e) {}
 
 // ============ ICONS (SVG, line style) ============
 const ICONS = {
@@ -2415,6 +2425,8 @@ const State = {
   ravkav: Store.get('ravkav', { balance: 0, lastLoad: null, history: [] }),
   families: Store.get('families', []),  // משפחות: { id, name, parent1Id, parent2Id, childrenIds: [] }
   settings: Store.get('settings', { homeReturnSeconds: 90, notifications: true, familyName: '' }),
+  devices: Store.get('devices', {}),      // רישום מכשירים: { [deviceId]: { id, name, version, firstSeen, lastSeen, ua } }
+  actionLog: Store.get('actionLog', []),  // יומן פעולות: { t, deviceId, deviceName, action, view }
 };
 
 function saveState() {
@@ -2971,6 +2983,13 @@ function toast(msg, type = '') {
   t.innerHTML = `<span>${msg}</span>`;
   document.getElementById('toast-container').appendChild(t);
   setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3000);
+  // רישום ליומן הפעולות - רק פעולות שהושלמו בהצלחה (לא שגיאות/סנכרון)
+  try {
+    if (type === 'success' && typeof logAction === 'function') {
+      const skip = ['התחברת', 'התנתקת', 'סונכרן', 'מהענן', 'לענן', 'גובו', 'החשבון נוצר'];
+      if (!skip.some(s => msg.indexOf(s) !== -1)) logAction(String(msg));
+    }
+  } catch (e) {}
 }
 
 // ============ חלונות אישור/הקלדה פנימיים ============
@@ -8411,6 +8430,8 @@ VIEW_RENDERERS.settings = (root) => {
 
     ${cloudCardHtml()}
 
+    ${devicesAndLogHtml()}
+
     <div class="card" style="margin-top:16px;">
       <div class="card-title">${icon('download')} גיבוי ושחזור</div>
       <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
@@ -8855,7 +8876,28 @@ function collectStateData() {
 }
 function applyStateData(data) {
   if (!data || typeof data !== 'object') return;
-  Object.keys(data).forEach(k => { if (k in State) State[k] = data[k]; });
+  Object.keys(data).forEach(k => {
+    if (!(k in State)) return;
+    // מכשירים ויומן פעולות ממוזגים בין המכשירים (לא נדרסים) כדי לשמור מעקב אמין
+    if (k === 'devices' && data.devices && typeof data.devices === 'object') {
+      const merged = Object.assign({}, State.devices || {});
+      Object.keys(data.devices).forEach(id => {
+        const inc = data.devices[id], cur = merged[id];
+        if (!cur || (inc && (inc.lastSeen || 0) >= (cur.lastSeen || 0))) merged[id] = inc;
+      });
+      State.devices = merged;
+    } else if (k === 'actionLog' && Array.isArray(data.actionLog)) {
+      const seen = new Set(), merged = [];
+      [...(data.actionLog || []), ...(State.actionLog || [])].forEach(e => {
+        const key = (e && e.t) + '|' + (e && e.deviceId) + '|' + (e && e.action);
+        if (!seen.has(key)) { seen.add(key); merged.push(e); }
+      });
+      merged.sort((a, b) => (b.t || 0) - (a.t || 0));
+      State.actionLog = merged.slice(0, 500);
+    } else {
+      State[k] = data[k];
+    }
+  });
   saveState();
 }
 function dataIsEmpty(d) {
@@ -9183,6 +9225,170 @@ function updateCloudUI() {
   }
 
   initUpdateBanner();
+})();
+
+// ==========================================================================
+//  מכשירים מחוברים + יומן פעולות לפי מכשיר
+// ==========================================================================
+// מזהה מכשיר קבוע (מקומי - לא מסונכרן, ייחודי לכל דפדפן/מכשיר)
+function getDeviceId() {
+  let id = Store.get('deviceId', null);
+  if (!id) { id = 'd' + RealDate.now().toString(36) + Math.round((performance.now() % 1) * 1e9).toString(36); Store.set('deviceId', id); }
+  return id;
+}
+// שם מכשיר אוטומטי מזיהוי הדפדפן (ניתן לשינוי ידני)
+function detectDeviceName() {
+  const ua = navigator.userAgent || '';
+  let os = 'מכשיר';
+  if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) os = 'אייפד';
+  else if (/iPhone/i.test(ua)) os = 'אייפון';
+  else if (/Android/i.test(ua)) os = /Mobile/i.test(ua) ? 'אנדרואיד' : 'טאבלט אנדרואיד';
+  else if (/Windows/i.test(ua)) os = 'מחשב Windows';
+  else if (/Macintosh|Mac OS/i.test(ua)) os = 'Mac';
+  else if (/Linux/i.test(ua)) os = 'Linux';
+  let br = '';
+  if (/Edg\//i.test(ua)) br = 'Edge'; else if (/Chrome\//i.test(ua)) br = 'Chrome';
+  else if (/Firefox\//i.test(ua)) br = 'Firefox'; else if (/Safari\//i.test(ua)) br = 'Safari';
+  return br ? os + ' · ' + br : os;
+}
+const DEVICE_ONLINE_MS = 3 * 60 * 1000; // "מחובר עכשיו" = נראה ב-3 הדקות האחרונות
+// עדכון רישום המכשיר הנוכחי (דופק). pushCloud=true גם דוחף לענן.
+function touchDevice(pushCloud) {
+  try {
+    const id = getDeviceId();
+    if (!State.devices || typeof State.devices !== 'object') State.devices = {};
+    const cur = State.devices[id] || {};
+    State.devices[id] = {
+      id: id,
+      name: cur.name || detectDeviceName(),
+      version: (typeof APP_VERSION !== 'undefined') ? APP_VERSION : '',
+      firstSeen: cur.firstSeen || RealDate.now(),
+      lastSeen: RealDate.now(),
+      ua: navigator.userAgent || ''
+    };
+    Store.set('devices', State.devices);
+    if (pushCloud && typeof scheduleCloudPush === 'function') scheduleCloudPush();
+  } catch (e) {}
+}
+// רישום פעולה ליומן (מוגבל ל-500 אחרונות)
+function logAction(desc) {
+  try {
+    const id = getDeviceId();
+    const dev = (State.devices && State.devices[id]) || {};
+    if (!Array.isArray(State.actionLog)) State.actionLog = [];
+    State.actionLog.unshift({
+      t: RealDate.now(), deviceId: id,
+      deviceName: dev.name || detectDeviceName(),
+      action: desc, view: (typeof currentView !== 'undefined') ? currentView : ''
+    });
+    if (State.actionLog.length > 500) State.actionLog = State.actionLog.slice(0, 500);
+    if (State.devices && State.devices[id]) { State.devices[id].lastSeen = RealDate.now(); }
+    Store.set('actionLog', State.actionLog);
+    Store.set('devices', State.devices);
+    if (typeof scheduleCloudPush === 'function') scheduleCloudPush();
+  } catch (e) {}
+}
+// זמן יחסי בעברית ("לפני 5 דקות")
+function relTime(ts) {
+  if (!ts) return '';
+  const diff = RealDate.now() - ts;
+  const m = Math.round(diff / 60000);
+  if (m < 1) return 'עכשיו';
+  if (m < 60) return `לפני ${m} דק׳`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `לפני ${h} שע׳`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `לפני ${d} ימים`;
+  return new RealDate(ts).toLocaleDateString('he-IL');
+}
+// שינוי שם מכשיר
+function renameDevice(id) {
+  const dev = State.devices && State.devices[id];
+  if (!dev) return;
+  appPrompt('שם חדש למכשיר:', dev.name || '').then(v => {
+    if (v == null) return;
+    const name = String(v).trim();
+    if (!name) return;
+    State.devices[id].name = name;
+    Store.set('devices', State.devices);
+    saveState(); renderView();
+    toast('שם המכשיר עודכן', 'success');
+  });
+}
+// מחיקת מכשיר מהרשימה (מנהל בלבד)
+function removeDevice(id) {
+  if (!requireAdmin(() => removeDevice(id))) return;
+  if (!State.devices || !State.devices[id]) return;
+  delete State.devices[id];
+  Store.set('devices', State.devices);
+  saveState(); renderView();
+  toast('המכשיר הוסר מהרשימה', 'success');
+}
+// ניקוי יומן הפעולות (מנהל בלבד)
+async function clearActionLog() {
+  if (!requireAdmin(() => clearActionLog())) return;
+  if (!(await appConfirm('לנקות את כל יומן הפעולות?'))) return;
+  State.actionLog = [];
+  Store.set('actionLog', State.actionLog);
+  saveState(); renderView();
+  toast('היומן נוקה', 'success');
+}
+// HTML לכרטיסי המכשירים והיומן (מוצג בהגדרות)
+function devicesAndLogHtml() {
+  const myId = getDeviceId();
+  const devs = Object.values(State.devices || {}).sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+  const now = RealDate.now();
+  const devRows = devs.length ? devs.map(d => {
+    const online = (now - (d.lastSeen || 0)) < DEVICE_ONLINE_MS;
+    const isMe = d.id === myId;
+    return `
+      <div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--bg-tertiary); border-radius:8px; margin-bottom:8px;">
+        <span style="flex-shrink:0; width:10px; height:10px; border-radius:50%; background:${online ? 'var(--success)' : 'var(--text-muted)'}; box-shadow:${online ? '0 0 8px var(--success)' : 'none'};"></span>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:600; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+            ${esc(d.name || 'מכשיר')}${isMe ? ' <span style="font-size:11px; color:var(--accent-light);">(מכשיר זה)</span>' : ''}
+          </div>
+          <div style="font-size:12px; color:var(--text-secondary); margin-top:2px;">
+            ${online ? '<span style="color:var(--success);">מחובר עכשיו</span>' : 'נראה לאחרונה ' + relTime(d.lastSeen)}
+            · גרסה ${esc(d.version || '—')}
+          </div>
+        </div>
+        <button class="btn btn-icon btn-sm" title="שנה שם" onclick="renameDevice('${d.id}')">${icon('edit', 14)}</button>
+        ${!isMe ? `<button class="btn btn-icon btn-sm btn-danger" title="הסר" onclick="removeDevice('${d.id}')">${icon('trash', 14)}</button>` : ''}
+      </div>`;
+  }).join('') : '<div class="empty-state" style="padding:12px 8px;">אין מכשירים רשומים עדיין</div>';
+
+  const log = (State.actionLog || []).slice(0, 100);
+  const logRows = log.length ? log.map(e => `
+      <div style="display:flex; align-items:baseline; gap:8px; padding:6px 4px; border-bottom:1px solid var(--border); font-size:12px;">
+        <span style="flex-shrink:0; color:var(--text-muted); font-feature-settings:'tnum'; min-width:88px;">${new RealDate(e.t).toLocaleString('he-IL', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'})}</span>
+        <span style="flex:1; color:var(--text-primary);">${esc(e.action || '')}</span>
+        <span style="flex-shrink:0; color:var(--accent-light); font-size:11px;">${esc(e.deviceName || '')}</span>
+      </div>`).join('') : '<div class="empty-state" style="padding:12px 8px;">אין פעולות רשומות עדיין</div>';
+
+  return `
+    <div class="card" style="margin-top:16px;">
+      <div class="card-title">${icon('cog')} מכשירים מחוברים</div>
+      <div style="font-size:12px; color:var(--text-muted); margin:8px 0 14px;">מכשירים שנכנסו למערכת. מעקב מלא בין מכשירים מחייב חיבור לענן.</div>
+      ${devRows}
+    </div>
+    <div class="card" style="margin-top:16px;">
+      <div class="card-header">
+        <div class="card-title">${icon('book')} יומן פעולות</div>
+        <button class="btn btn-danger btn-sm" onclick="clearActionLog()">${icon('trash', 14)} נקה יומן</button>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted); margin:8px 0 10px;">100 הפעולות האחרונות (מתוך עד 500 שמורות), לפי מכשיר.</div>
+      <div style="max-height:340px; overflow-y:auto;">${logRows}</div>
+    </div>`;
+}
+// אתחול מעקב מכשירים
+(function initDeviceTracking() {
+  try {
+    touchDevice(true);
+    logAction('פתיחת המערכת');
+    setInterval(() => touchDevice(true), 120000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') touchDevice(true); });
+  } catch (e) {}
 })();
 
 // רישום Service Worker — מאפשר לאפליקציה לעבוד אופליין כשמותקנת במסך הבית (רק ב-https)
