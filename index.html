@@ -2344,7 +2344,7 @@ const CONFIG = {
 
 // גרסת האפליקציה — מודבקת לתוך ה-bundle. הבאנר "יצאה גרסה חדשה" משווה אותה
 // לגרסה שבשרת (version.json). בכל פריסה חדשה — להעלות את המספר גם כאן וגם ב-version.json.
-const APP_VERSION = 'V01.05.02';
+const APP_VERSION = 'V01.05.03';
 // הצגת מספר הגרסה בלוגו שבסרגל הצד
 try { const _lv = document.getElementById('logo-version'); if (_lv) _lv.textContent = 'גרסה ' + APP_VERSION; } catch (e) {}
 
@@ -8987,20 +8987,64 @@ async function cloudPull() {
   return data;
 }
 
+// השוואת נתוני משתמש (ללא מעקב מכשירים/יומן) בין המצב המקומי לנתונים מהענן.
+// stringify יציב עם מפתחות ממוינים — כי הענן לא שומר על סדר מפתחות זהה.
+function _stableStr(v) {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v);
+  if (Array.isArray(v)) return '[' + v.map(_stableStr).join(',') + ']';
+  return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + _stableStr(v[k])).join(',') + '}';
+}
+function userDataChanged(remoteData) {
+  try {
+    const skip = { devices: 1, actionLog: 1, devicesRemoved: 1 };
+    return Object.keys(State).some(k =>
+      !skip[k] && (k in remoteData) && _stableStr(State[k]) !== _stableStr(remoteData[k]));
+  } catch (e) { return true; }
+}
+
+// גיבוי לפני רענון אוטומטי מהענן — מרוסן לפעם בחצי שעה, כדי שהרענון התכוף
+// לא ידרוס את הגיבוי האוטומטי היחיד עם מצב טרי מדי (גיבוי ישן יותר שימושי לשחזור)
+let _lastAutoRefreshBackupT = 0;
+function autoRefreshBackup() {
+  const now = RealDate.now();
+  if (now - _lastAutoRefreshBackupT < 30 * 60 * 1000) return;
+  _lastAutoRefreshBackupT = now;
+  makeAutoBackup('לפני רענון אוטומטי מהענן');
+}
+
 async function cloudPush(reason) {
   if (!sb || !cloudSession) return false;
   cloudPushing = true; updateSyncIndicator();
-  // לפני ההעלאה: מיזוג מעקב המכשירים והיומן מהענן, כדי שההעלאה לא תדרוס
-  // רישומים של מכשירים אחרים (ההעלאה מחליפה את כל התמונה בענן).
+  // לפני ההעלאה: בדיקת מצב הענן, כדי שההעלאה לא תדרוס נתונים ממכשירים אחרים
+  // (ההעלאה מחליפה את כל התמונה בענן).
   try {
     const remote = await cloudPull();
     if (remote && remote.data && typeof remote.data === 'object') {
-      mergeDevicesRemovedFrom(remote.data.devicesRemoved);
-      mergeDevicesFrom(remote.data.devices);
-      mergeActionLogFrom(remote.data.actionLog);
-      Store.set('devicesRemoved', State.devicesRemoved);
-      Store.set('devices', State.devices);
-      Store.set('actionLog', State.actionLog);
+      const m0 = getCloudMeta();
+      const localT0 = m0.localUpdatedAt ? new RealDate(m0.localUpdatedAt).getTime() : 0;
+      const lastServerT0 = m0.lastServerUpdatedAt ? new RealDate(m0.lastServerUpdatedAt).getTime() : 0;
+      const remoteT0 = remote.updated_at ? new RealDate(remote.updated_at).getTime() : 0;
+      if (remoteT0 > lastServerT0 && localT0 <= lastServerT0 && !dataIsEmpty(remote.data)) {
+        // הענן התעדכן ממכשיר אחר ואין כאן עריכות שממתינות — מאמצים את נתוני הענן
+        // לפני ההעלאה (רענון אוטומטי: כך משימה שנוספה במכשיר אחר מופיעה כאן ולא נדרסת).
+        const changed = userDataChanged(remote.data);
+        if (changed) autoRefreshBackup();
+        applyStateData(remote.data);
+        const m1 = getCloudMeta(); m1.lastServerUpdatedAt = remote.updated_at; setCloudMeta(m1);
+        // רענון המסך רק אם נתוני המשתמש באמת השתנו — לא על כל פעימת חיים של מכשיר אחר
+        if (changed) {
+          if (typeof renderView === 'function') renderView();
+          if (typeof updateTopbar === 'function') updateTopbar();
+        }
+      } else {
+        // יש עריכות מקומיות שממתינות (הן מנצחות) — ממזגים רק את מעקב המכשירים והיומן
+        mergeDevicesRemovedFrom(remote.data.devicesRemoved);
+        mergeDevicesFrom(remote.data.devices);
+        mergeActionLogFrom(remote.data.actionLog);
+        Store.set('devicesRemoved', State.devicesRemoved);
+        Store.set('devices', State.devices);
+        Store.set('actionLog', State.actionLog);
+      }
     }
   } catch (e) { console.error('cloudPush merge', e); }
   const now = new RealDate().toISOString();
@@ -9071,14 +9115,18 @@ async function cloudSyncNow(silent) {
 }
 
 // נקרא אחרי כל שמירה מקומית — דוחף לענן בהשהיה קצרה (איגום שינויים)
-function scheduleCloudPush() {
-  // תמיד מסמנים שהיו שינויים מקומיים — גם באופליין וגם ללא חשבון ענן.
+// heartbeat=true: פעימת חיים של מעקב המכשירים — נדחפת לענן אך לא נחשבת "עריכה מקומית",
+// כדי שרענון אוטומטי מהענן לא ייחסם ומכשיר ישן לא ידרוס נתונים חדשים ממכשיר אחר.
+function scheduleCloudPush(heartbeat) {
+  // עריכה אמיתית של המשתמש מסומנת כשינוי מקומי — גם באופליין וגם ללא חשבון ענן.
   // קריטי: כך העריכות המקומיות תמיד "מנצחות" בסנכרון הבא ולא נדרסות ע"י הענן.
-  try {
-    const m = getCloudMeta();
-    m.localUpdatedAt = new RealDate().toISOString();
-    setCloudMeta(m);
-  } catch (e) { console.error('scheduleCloudPush meta', e); }
+  if (!heartbeat) {
+    try {
+      const m = getCloudMeta();
+      m.localUpdatedAt = new RealDate().toISOString();
+      setCloudMeta(m);
+    } catch (e) { console.error('scheduleCloudPush meta', e); }
+  }
   if (typeof updateSyncIndicator === 'function') updateSyncIndicator();
   // דחיפה בפועל לרשת רק אם יש חיבור לחשבון ולקוח ענן פעיל
   if (!sb || !cloudSession) return;
@@ -9313,7 +9361,7 @@ function touchDevice(pushCloud) {
       ua: navigator.userAgent || ''
     };
     Store.set('devices', State.devices);
-    if (pushCloud && typeof scheduleCloudPush === 'function') scheduleCloudPush();
+    if (pushCloud && typeof scheduleCloudPush === 'function') scheduleCloudPush(true);
   } catch (e) {}
 }
 // רישום פעולה ליומן (מוגבל ל-500 אחרונות)
@@ -9331,7 +9379,7 @@ function logAction(desc) {
     if (State.devices && State.devices[id]) { State.devices[id].lastSeen = RealDate.now(); }
     Store.set('actionLog', State.actionLog);
     Store.set('devices', State.devices);
-    if (typeof scheduleCloudPush === 'function') scheduleCloudPush();
+    if (typeof scheduleCloudPush === 'function') scheduleCloudPush(true);
   } catch (e) {}
 }
 // זמן יחסי בעברית ("לפני 5 דקות")
