@@ -2344,7 +2344,7 @@ const CONFIG = {
 
 // גרסת האפליקציה — מודבקת לתוך ה-bundle. הבאנר "יצאה גרסה חדשה" משווה אותה
 // לגרסה שבשרת (version.json). בכל פריסה חדשה — להעלות את המספר גם כאן וגם ב-version.json.
-const APP_VERSION = 'V01.05.01';
+const APP_VERSION = 'V01.05.02';
 // הצגת מספר הגרסה בלוגו שבסרגל הצד
 try { const _lv = document.getElementById('logo-version'); if (_lv) _lv.textContent = 'גרסה ' + APP_VERSION; } catch (e) {}
 
@@ -2426,6 +2426,7 @@ const State = {
   families: Store.get('families', []),  // משפחות: { id, name, parent1Id, parent2Id, childrenIds: [] }
   settings: Store.get('settings', { homeReturnSeconds: 90, notifications: true, familyName: '' }),
   devices: Store.get('devices', {}),      // רישום מכשירים: { [deviceId]: { id, name, version, firstSeen, lastSeen, ua } }
+  devicesRemoved: Store.get('devicesRemoved', {}), // מכשירים שהוסרו ע"י מנהל: { [deviceId]: removedAt } — מונע "תחיית" מכשיר שנמחק בעת מיזוג מהענן
   actionLog: Store.get('actionLog', []),  // יומן פעולות: { t, deviceId, deviceName, action, view }
 };
 
@@ -8874,26 +8875,58 @@ function collectStateData() {
   Object.keys(State).forEach(k => { d[k] = State[k]; });
   return d;
 }
+// ---- מיזוג מעקב מכשירים: אף מכשיר לא דורס את האחרים ----
+// רשומות הסרה: לכל מכשיר נשמר הזמן האחרון שבו הוסר ע"י מנהל (המאוחר מנצח)
+function mergeDevicesRemovedFrom(incoming) {
+  if (!incoming || typeof incoming !== 'object') return;
+  if (!State.devicesRemoved || typeof State.devicesRemoved !== 'object') State.devicesRemoved = {};
+  Object.keys(incoming).forEach(id => {
+    const t = incoming[id] || 0;
+    if (t > (State.devicesRemoved[id] || 0)) State.devicesRemoved[id] = t;
+  });
+}
+// רשימת מכשירים: לכל מכשיר נשמרת הרשומה העדכנית ביותר (לפי lastSeen);
+// מכשיר שהוסר ע"י מנהל לא חוזר — אלא אם התחבר שוב אחרי ההסרה
+function mergeDevicesFrom(incoming) {
+  if (!incoming || typeof incoming !== 'object') return;
+  const removed = State.devicesRemoved || {};
+  const merged = Object.assign({}, State.devices || {});
+  Object.keys(incoming).forEach(id => {
+    const inc = incoming[id], cur = merged[id];
+    if (!inc) return;
+    if (removed[id] && (inc.lastSeen || 0) <= removed[id]) return;
+    if (!cur || (inc.lastSeen || 0) >= (cur.lastSeen || 0)) merged[id] = inc;
+  });
+  // ניקוי מקומי: מכשיר שהוסר ולא נראה מאז ההסרה — יוצא גם מהרשימה המקומית
+  Object.keys(removed).forEach(id => {
+    if (merged[id] && (merged[id].lastSeen || 0) <= removed[id]) delete merged[id];
+  });
+  State.devices = merged;
+}
+// יומן פעולות: איחוד ללא כפילויות, ממוין מהחדש לישן, עד 500 רשומות
+function mergeActionLogFrom(incoming) {
+  if (!Array.isArray(incoming)) return;
+  const seen = new Set(), merged = [];
+  [...incoming, ...(State.actionLog || [])].forEach(e => {
+    const key = (e && e.t) + '|' + (e && e.deviceId) + '|' + (e && e.action);
+    if (!seen.has(key)) { seen.add(key); merged.push(e); }
+  });
+  merged.sort((a, b) => (b.t || 0) - (a.t || 0));
+  State.actionLog = merged.slice(0, 500);
+}
 function applyStateData(data) {
   if (!data || typeof data !== 'object') return;
+  // הסרות-מכשירים ממוזגות לפני רשימת המכשירים — כדי שמכשיר שנמחק לא "יקום לתחייה"
+  mergeDevicesRemovedFrom(data.devicesRemoved);
   Object.keys(data).forEach(k => {
     if (!(k in State)) return;
     // מכשירים ויומן פעולות ממוזגים בין המכשירים (לא נדרסים) כדי לשמור מעקב אמין
-    if (k === 'devices' && data.devices && typeof data.devices === 'object') {
-      const merged = Object.assign({}, State.devices || {});
-      Object.keys(data.devices).forEach(id => {
-        const inc = data.devices[id], cur = merged[id];
-        if (!cur || (inc && (inc.lastSeen || 0) >= (cur.lastSeen || 0))) merged[id] = inc;
-      });
-      State.devices = merged;
-    } else if (k === 'actionLog' && Array.isArray(data.actionLog)) {
-      const seen = new Set(), merged = [];
-      [...(data.actionLog || []), ...(State.actionLog || [])].forEach(e => {
-        const key = (e && e.t) + '|' + (e && e.deviceId) + '|' + (e && e.action);
-        if (!seen.has(key)) { seen.add(key); merged.push(e); }
-      });
-      merged.sort((a, b) => (b.t || 0) - (a.t || 0));
-      State.actionLog = merged.slice(0, 500);
+    if (k === 'devicesRemoved') {
+      // מוזג כבר למעלה
+    } else if (k === 'devices') {
+      mergeDevicesFrom(data.devices);
+    } else if (k === 'actionLog') {
+      mergeActionLogFrom(data.actionLog);
     } else {
       State[k] = data[k];
     }
@@ -8957,6 +8990,19 @@ async function cloudPull() {
 async function cloudPush(reason) {
   if (!sb || !cloudSession) return false;
   cloudPushing = true; updateSyncIndicator();
+  // לפני ההעלאה: מיזוג מעקב המכשירים והיומן מהענן, כדי שההעלאה לא תדרוס
+  // רישומים של מכשירים אחרים (ההעלאה מחליפה את כל התמונה בענן).
+  try {
+    const remote = await cloudPull();
+    if (remote && remote.data && typeof remote.data === 'object') {
+      mergeDevicesRemovedFrom(remote.data.devicesRemoved);
+      mergeDevicesFrom(remote.data.devices);
+      mergeActionLogFrom(remote.data.actionLog);
+      Store.set('devicesRemoved', State.devicesRemoved);
+      Store.set('devices', State.devices);
+      Store.set('actionLog', State.actionLog);
+    }
+  } catch (e) { console.error('cloudPush merge', e); }
   const now = new RealDate().toISOString();
   const { error } = await sb.from('household_state').upsert(
     { user_id: cloudSession.user.id, data: collectStateData(), updated_at: now },
@@ -9320,7 +9366,11 @@ function removeDevice(id) {
   if (!requireAdmin(() => removeDevice(id))) return;
   if (!State.devices || !State.devices[id]) return;
   delete State.devices[id];
+  // רישום ההסרה — כדי שהמכשיר לא יחזור לרשימה במיזוג הבא מהענן (יחזור רק אם יתחבר שוב)
+  if (!State.devicesRemoved || typeof State.devicesRemoved !== 'object') State.devicesRemoved = {};
+  State.devicesRemoved[id] = RealDate.now();
   Store.set('devices', State.devices);
+  Store.set('devicesRemoved', State.devicesRemoved);
   saveState(); renderView();
   toast('המכשיר הוסר מהרשימה', 'success');
 }
