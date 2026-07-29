@@ -2344,7 +2344,7 @@ const CONFIG = {
 
 // גרסת האפליקציה — מודבקת לתוך ה-bundle. הבאנר "יצאה גרסה חדשה" משווה אותה
 // לגרסה שבשרת (version.json). בכל פריסה חדשה — להעלות את המספר גם כאן וגם ב-version.json.
-const APP_VERSION = 'V01.05.03';
+const APP_VERSION = 'V01.05.04';
 // הצגת מספר הגרסה בלוגו שבסרגל הצד
 try { const _lv = document.getElementById('logo-version'); if (_lv) _lv.textContent = 'גרסה ' + APP_VERSION; } catch (e) {}
 
@@ -2430,14 +2430,15 @@ const State = {
   actionLog: Store.get('actionLog', []),  // יומן פעולות: { t, deviceId, deviceName, action, view }
 };
 
-function saveState() {
+// cloudHeartbeat=true: שמירה שמקורה באימוץ נתונים מהענן — לא עריכה מקומית של המשתמש
+function saveState(cloudHeartbeat) {
   let failed = false;
   Object.keys(State).forEach(key => { if (!Store.set(key, State[key])) failed = true; });
   if (failed && typeof toast === 'function') {
     toast('השמירה נכשלה — ייתכן שאחסון הדפדפן מלא. ייצא גיבוי ופנה מקום.', 'danger');
   }
   if (typeof invalidateStatsCache === 'function') invalidateStatsCache();
-  if (typeof scheduleCloudPush === 'function') scheduleCloudPush();
+  if (typeof scheduleCloudPush === 'function') scheduleCloudPush(cloudHeartbeat);
   return !failed;
 }
 
@@ -8865,6 +8866,8 @@ let cloudSession = null;       // מושב מחובר נוכחי
 let _cloudPushTimer = null;
 let cloudPushing = false;      // האם כרגע מתבצעת העלאה לענן
 let cloudLastError = false;    // האם ההעלאה האחרונה נכשלה
+let rtChannel = null;          // ערוץ זמן-אמת: מודיע למכשירים אחרים על שינוי מיד
+let _broadcastAfterPush = false; // האם ההעלאה הקרובה נובעת מעריכה אמיתית (ואז מצפצפים לשאר)
 
 function getCloudMeta() { return Store.get('cloudMeta', { localUpdatedAt: null, lastServerUpdatedAt: null }); }
 function setCloudMeta(m) { Store.set('cloudMeta', m); }
@@ -8931,7 +8934,8 @@ function applyStateData(data) {
       State[k] = data[k];
     }
   });
-  saveState();
+  // אימוץ נתונים מהענן אינו עריכה מקומית — לא מסמן "שינוי ממתין" (מונע פינג-פונג בין מכשירים)
+  saveState(true);
 }
 function dataIsEmpty(d) {
   if (!d || typeof d !== 'object') return true;
@@ -8948,13 +8952,40 @@ function initCloud() {
     });
     sb.auth.getSession().then(({ data }) => {
       cloudSession = data && data.session ? data.session : null;
-      if (cloudSession) { updateCloudUI(); cloudSyncNow(true); }
+      if (cloudSession) { updateCloudUI(); cloudSyncNow(true); setupRealtime(); }
     });
-    sb.auth.onAuthStateChange((_ev, session) => { cloudSession = session; updateCloudUI(); updateSyncIndicator(); });
+    sb.auth.onAuthStateChange((_ev, session) => { cloudSession = session; updateCloudUI(); updateSyncIndicator(); setupRealtime(); });
     window.addEventListener('online', () => { updateSyncIndicator(); if (cloudSession) cloudSyncNow(true); });
     window.addEventListener('offline', () => { updateSyncIndicator(); });
     updateSyncIndicator();
   } catch (e) { console.error('initCloud failed', e); }
+}
+
+// ============ עדכון מיידי בין מכשירים (ערוץ זמן-אמת) ============
+// כל מכשיר מאזין לערוץ פרטי של המשתמש. אחרי עריכה אמיתית שהועלתה לענן — נשלח "צפצוף"
+// לשאר המכשירים, והם מושכים את העדכון תוך שניות (הבדיקה כל 2 דק' נשארת כרשת ביטחון).
+function setupRealtime() {
+  try {
+    if (rtChannel) { try { sb.removeChannel(rtChannel); } catch (e) {} rtChannel = null; }
+    if (!sb || !cloudSession || typeof sb.channel !== 'function') return;
+    rtChannel = sb.channel('hh-' + cloudSession.user.id);
+    rtChannel.on('broadcast', { event: 'updated' }, (msg) => {
+      try {
+        const from = msg && msg.payload ? msg.payload.deviceId : null;
+        if (from && typeof getDeviceId === 'function' && from === getDeviceId()) return;
+        // מכשיר אחר שמר שינוי — מושכים מיד דרך מנגנון ההעלאה-עם-אימוץ (בטוח לעריכות מקומיות)
+        if (_cloudPushTimer) clearTimeout(_cloudPushTimer);
+        _cloudPushTimer = setTimeout(() => { cloudPush('עדכון ממכשיר אחר'); }, 400);
+      } catch (e) {}
+    });
+    rtChannel.subscribe();
+  } catch (e) { console.error('setupRealtime', e); }
+}
+function broadcastUpdate() {
+  try {
+    if (!rtChannel) return;
+    rtChannel.send({ type: 'broadcast', event: 'updated', payload: { deviceId: (typeof getDeviceId === 'function') ? getDeviceId() : null } });
+  } catch (e) {}
 }
 
 // ============ חיווי סנכרון בטופ-בר (נקודה ירוקה/כתומה/אדומה משמאל לשעון) ============
@@ -9059,6 +9090,8 @@ async function cloudPush(reason) {
   }
   const m = getCloudMeta(); m.lastServerUpdatedAt = now; m.localUpdatedAt = now; setCloudMeta(m);
   cloudPushing = false; cloudLastError = false;
+  // אם ההעלאה כללה עריכה אמיתית — מודיעים לשאר המכשירים שימשכו את העדכון מיד
+  if (_broadcastAfterPush) { _broadcastAfterPush = false; broadcastUpdate(); }
   updateCloudUI();
   updateSyncIndicator();
   return true;
@@ -9126,6 +9159,7 @@ function scheduleCloudPush(heartbeat) {
       m.localUpdatedAt = new RealDate().toISOString();
       setCloudMeta(m);
     } catch (e) { console.error('scheduleCloudPush meta', e); }
+    _broadcastAfterPush = true; // עריכה אמיתית — אחרי ההעלאה נודיע לשאר המכשירים מיד
   }
   if (typeof updateSyncIndicator === 'function') updateSyncIndicator();
   // דחיפה בפועל לרשת רק אם יש חיבור לחשבון ולקוח ענן פעיל
