@@ -1102,6 +1102,22 @@ return function(e,t){return e-t*Math.floor(e/t)}(this.abs(),7)}greg(){return l(t
   }
   .yz-widget-card.bd .yz-widget-date { color: #87c4a4; }
   .yz-widget-card.bd .yz-widget-cd { color: #87c4a4; }
+  /* יום הולדת שכבר עבר - מעומעם */
+  .yz-widget-card.bd.past { opacity: 0.55; }
+  /* יום הולדת היום - הדגשה בזהב */
+  .yz-widget-card.bd.today {
+    background: linear-gradient(to left, rgba(201,169,110,0.18), var(--bg-secondary));
+    border-right-color: var(--gold);
+  }
+  .yz-widget-card.bd.today .yz-widget-date,
+  .yz-widget-card.bd.today .yz-widget-cd { color: var(--gold); }
+  /* כותרת-משנה בתוך ויג'ט ימי ההולדת במסך הבית */
+  .bd-widget-sub {
+    font-size: 10px; font-weight: 600; color: var(--text-muted);
+    letter-spacing: 0.3px; margin: 6px 2px 4px;
+    padding-bottom: 3px; border-bottom: 1px solid var(--border);
+  }
+  .bd-widget-sub:first-child { margin-top: 0; }
 
   /* ============ עץ משפחתי - קומפקטי ============ */
   .ftree-wrap {
@@ -2344,7 +2360,7 @@ const CONFIG = {
 
 // גרסת האפליקציה — מודבקת לתוך ה-bundle. הבאנר "יצאה גרסה חדשה" משווה אותה
 // לגרסה שבשרת (version.json). בכל פריסה חדשה — להעלות את המספר גם כאן וגם ב-version.json.
-const APP_VERSION = 'V01.05.04';
+const APP_VERSION = 'V01.06.00';
 // הצגת מספר הגרסה בלוגו שבסרגל הצד
 try { const _lv = document.getElementById('logo-version'); if (_lv) _lv.textContent = 'גרסה ' + APP_VERSION; } catch (e) {}
 
@@ -4027,7 +4043,10 @@ VIEW_RENDERERS.home = (root) => {
     });
   } catch (e) { prepLists = []; }
   const upcomingBdays = getUpcomingBirthdays(60);
-  const recentPastBdays = getRecentPastBirthdays(7);
+  // ויג'ט ימי ההולדת: חלון של 5 ימים אחורה/קדימה + כל מי שחוגג בחודש העברי הנוכחי
+  const pastBdays5 = getRecentPastBirthdays(5);
+  const hebMonthBdays = getHebMonthBirthdays();
+  const curHebMonth = currentHebMonthName();
   const upcomingYahrzeits = getUpcomingYahrzeits(365);
   const openTasks = State.tasks.filter(t => !t.done);
   const importantMsgs = State.messages.filter(m => m.important);
@@ -4180,15 +4199,35 @@ VIEW_RENDERERS.home = (root) => {
           <button class="btn btn-sm" onclick="navigate('birthdays')">←</button>
         </div>
         <div>
-          ${(() => { const wk = upcomingBdays.filter(b => b.daysUntil !== null && b.daysUntil <= 31); return wk.length > 0 ? wk.slice(0, 8).map(b => `
-            <div class="yz-widget-card bd">
-              <div class="yz-widget-name">${esc(b.name)}${b.age ? ` · ${b.age}` : ''}</div>
-              <div class="yz-widget-row">
-                <span class="yz-widget-date">${b.hebStr || b.date.toLocaleDateString('he-IL', {day:'numeric', month:'long'})}</span>
-                <span class="yz-widget-cd">${b.daysUntil === 0 ? 'היום' : `בעוד ${b.daysUntil} י׳`}</span>
-              </div>
-            </div>
-          `).join('') : '<div class="empty-state" style="padding:12px 8px;">אין ימי הולדת בחודש הקרוב</div>'; })()}
+          ${(() => {
+            const bdRow = (b) => {
+              const cd = b.daysUntil === 0 ? 'היום' : (b.daysUntil > 0 ? `בעוד ${b.daysUntil} י׳` : `לפני ${Math.abs(b.daysUntil)} י׳`);
+              const cls = b.daysUntil === 0 ? ' today' : (b.daysUntil < 0 ? ' past' : '');
+              return `
+              <div class="yz-widget-card bd${cls}">
+                <div class="yz-widget-name">${esc(b.name)}${b.age ? ` · ${b.age}` : ''}</div>
+                <div class="yz-widget-row">
+                  <span class="yz-widget-date">${b.hebStr || b.date.toLocaleDateString('he-IL', {day:'numeric', month:'long'})}</span>
+                  <span class="yz-widget-cd">${cd}</span>
+                </div>
+              </div>`;
+            };
+            // 1) חלון של 5 ימים לפני ו-5 ימים אחרי
+            const near = [
+              ...pastBdays5.filter(b => b.daysUntil >= -5),
+              ...upcomingBdays.filter(b => b.daysUntil !== null && b.daysUntil <= 5)
+            ].sort((a, b) => a.daysUntil - b.daysUntil);
+            const nearIds = new Set(near.map(b => b.id));
+            // 2) כל מי שיום ההולדת שלו בחודש העברי הנוכחי (בלי כפילות עם החלון)
+            const monthRest = hebMonthBdays.filter(b => !nearIds.has(b.id));
+            if (near.length === 0 && monthRest.length === 0) {
+              return '<div class="empty-state" style="padding:12px 8px;">אין ימי הולדת בימים הקרובים או בחודש זה</div>';
+            }
+            return `
+              ${near.length > 0 ? `<div class="bd-widget-sub">5 ימים לפני ואחרי</div>${near.map(bdRow).join('')}` : ''}
+              ${monthRest.length > 0 ? `<div class="bd-widget-sub">חודש ${esc(curHebMonth)}</div>${monthRest.map(bdRow).join('')}` : ''}
+            `;
+          })()}
         </div>
       </div>
 
@@ -6244,8 +6283,75 @@ function getRecentPastBirthdays(daysBack = 7) {
     } catch (e) {
       age = prevOccur.getFullYear() - orig.getFullYear();
     }
-    return { ...b, date: prevOccur, origDate: orig, daysUntil: -daysSince, daysSince, age, isPast: true };
+    // מחרוזת תאריך עברי לתצוגה (כמו בימי ההולדת הקרובים)
+    let hebStr = '';
+    try {
+      if (hebDay && hebMonth) {
+        const dl = HEB_DAY_LETTERS[hebDay] || hebDay;
+        const oh = gregToHebrew(orig);
+        hebStr = `${dl} ${hebMonth}${oh ? ' ' + hebYearLetters(oh.year) : ''}`;
+      }
+    } catch (e) {}
+    return { ...b, date: prevOccur, origDate: orig, hebDay, hebMonth, daysUntil: -daysSince, daysSince, age, hebStr, isPast: true };
   }).filter(Boolean).sort((a,b) => a.daysSince - b.daysSince);
+}
+
+// שם החודש העברי הנוכחי (בעברית) - למשל "אלול" / "אדר ב"
+function currentHebMonthName() {
+  try {
+    const HC = getHebcal();
+    if (!HC) return '';
+    const today = new Date(); today.setHours(0,0,0,0);
+    const hd = new HC.HDate(today);
+    const eng = HC.HDate.getMonthName(hd.getMonth(), hd.getFullYear());
+    return ENG_MONTH_TO_HEB[eng] || eng;
+  } catch (e) { return ''; }
+}
+
+// כל מי שיום ההולדת שלו חל בחודש העברי הנוכחי - כולל אלה שכבר עברו החודש.
+// daysUntil שלילי = כבר עבר החודש, 0 = היום, חיובי = עוד יגיע החודש.
+function getHebMonthBirthdays() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  let HC, curHd;
+  try {
+    HC = getHebcal();
+    if (!HC) return [];
+    curHd = new HC.HDate(today);
+  } catch (e) { return []; }
+  const curYear = curHd.getFullYear();
+  const curMonthEng = HC.HDate.getMonthName(curHd.getMonth(), curYear);
+  return State.birthdays.map(b => {
+    const orig = new Date(b.date);
+    let hebDay = b.hebDay, hebMonth = b.hebMonth;
+    try {
+      // אם אין תאריך עברי שמור - גזור מהלועזי
+      if (!hebDay || !hebMonth) {
+        const heb = gregToHebrew(orig);
+        if (heb) {
+          hebDay = heb.day;
+          hebMonth = ENG_MONTH_TO_HEB[HC.HDate.getMonthName(heb.monthNum, heb.year)] || heb.month;
+        }
+      }
+      if (!hebDay || !hebMonth) return null;
+      // אדר בשנה מעוברת -> אדר ב (אותו כלל כמו בשאר החישובים)
+      const eng = resolveAdar(HEB_MONTH_TO_ENG[hebMonth] || hebMonth, curYear);
+      if (eng !== curMonthEng) return null;
+      const occur = hebrewToGreg(curYear, eng, hebDay);
+      if (!occur) return null;
+      occur.setHours(0,0,0,0);
+      const daysUntil = Math.round((occur - today) / (1000*60*60*24));
+      let age = null;
+      try { age = curYear - new HC.HDate(orig).getFullYear(); }
+      catch (e2) { age = occur.getFullYear() - orig.getFullYear(); }
+      let hebStr = '';
+      try {
+        const dl = HEB_DAY_LETTERS[hebDay] || hebDay;
+        const oh = gregToHebrew(orig);
+        hebStr = `${dl} ${hebMonth}${oh ? ' ' + hebYearLetters(oh.year) : ''}`;
+      } catch (e2) {}
+      return { ...b, date: occur, origDate: orig, hebDay, hebMonth, daysUntil, age, hebStr, inHebMonth: true };
+    } catch (e) { return null; }
+  }).filter(Boolean).sort((a,b) => a.daysUntil - b.daysUntil);
 }
 
 // קבל את התאריך העברי האפקטיבי של יארצייט (לפי שמירה ידנית או נגזר מהלועזי)
