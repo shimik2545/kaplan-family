@@ -2360,7 +2360,7 @@ const CONFIG = {
 
 // גרסת האפליקציה — מודבקת לתוך ה-bundle. הבאנר "יצאה גרסה חדשה" משווה אותה
 // לגרסה שבשרת (version.json). בכל פריסה חדשה — להעלות את המספר גם כאן וגם ב-version.json.
-const APP_VERSION = 'V01.06.00';
+const APP_VERSION = 'V01.06.01';
 // הצגת מספר הגרסה בלוגו שבסרגל הצד
 try { const _lv = document.getElementById('logo-version'); if (_lv) _lv.textContent = 'גרסה ' + APP_VERSION; } catch (e) {}
 
@@ -4224,7 +4224,7 @@ VIEW_RENDERERS.home = (root) => {
               return '<div class="empty-state" style="padding:12px 8px;">אין ימי הולדת בימים הקרובים או בחודש זה</div>';
             }
             return `
-              ${near.length > 0 ? `<div class="bd-widget-sub">5 ימים לפני ואחרי</div>${near.map(bdRow).join('')}` : ''}
+              ${near.length > 0 ? near.map(bdRow).join('') : ''}
               ${monthRest.length > 0 ? `<div class="bd-widget-sub">חודש ${esc(curHebMonth)}</div>${monthRest.map(bdRow).join('')}` : ''}
             `;
           })()}
