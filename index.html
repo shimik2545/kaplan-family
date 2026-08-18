@@ -2360,7 +2360,7 @@ const CONFIG = {
 
 // גרסת האפליקציה — מודבקת לתוך ה-bundle. הבאנר "יצאה גרסה חדשה" משווה אותה
 // לגרסה שבשרת (version.json). בכל פריסה חדשה — להעלות את המספר גם כאן וגם ב-version.json.
-const APP_VERSION = 'V01.06.01';
+const APP_VERSION = 'V01.06.02';
 // הצגת מספר הגרסה בלוגו שבסרגל הצד
 try { const _lv = document.getElementById('logo-version'); if (_lv) _lv.textContent = 'גרסה ' + APP_VERSION; } catch (e) {}
 
@@ -2446,10 +2446,32 @@ const State = {
   actionLog: Store.get('actionLog', []),  // יומן פעולות: { t, deviceId, deviceName, action, view }
 };
 
+// כשאחסון הדפדפן מתמלא, setItem נכשל והשמירה לא נכתבת — מצב שנראה למשתמש כמו
+// "שמרתי והנתון נעלם". לפני שמוותרים: מפנים מקום (יומן פעולות ארוך + גיבוי אוטומטי)
+// ומנסים שוב. נתוני המשתמש עצמם לעולם לא נמחקים כאן.
+function freeStorageSpace() {
+  let freed = false;
+  try {
+    if (Array.isArray(State.actionLog) && State.actionLog.length > 100) {
+      State.actionLog = State.actionLog.slice(0, 100);
+      freed = true;
+    }
+  } catch (e) {}
+  try { localStorage.removeItem('beithaim_autobackup'); freed = true; } catch (e) {}
+  return freed;
+}
+
 // cloudHeartbeat=true: שמירה שמקורה באימוץ נתונים מהענן — לא עריכה מקומית של המשתמש
 function saveState(cloudHeartbeat) {
   let failed = false;
   Object.keys(State).forEach(key => { if (!Store.set(key, State[key])) failed = true; });
+  if (failed) {
+    // ניסיון הצלה אחד: פינוי מקום וכתיבה חוזרת של כל המפתחות
+    if (freeStorageSpace()) {
+      failed = false;
+      Object.keys(State).forEach(key => { if (!Store.set(key, State[key])) failed = true; });
+    }
+  }
   if (failed && typeof toast === 'function') {
     toast('השמירה נכשלה — ייתכן שאחסון הדפדפן מלא. ייצא גיבוי ופנה מקום.', 'danger');
   }
@@ -8970,14 +8992,53 @@ const CLOUD = {
 let sb = null;                 // לקוח Supabase
 let cloudSession = null;       // מושב מחובר נוכחי
 let _cloudPushTimer = null;
+let _cloudRetryTimer = null;   // ניסיון חוזר אחרי כשל רשת (השהיה גדלה)
+let _cloudRetryDelay = 0;
+let _cloudSyncBusy = false;    // מונע שני סנכרונים מקבילים שדורסים זה את זה
+let _localEditSeq = 0;         // מונה עריכות מקומיות — מזהה עריכה שנעשתה תוך כדי העלאה
 let cloudPushing = false;      // האם כרגע מתבצעת העלאה לענן
 let cloudLastError = false;    // האם ההעלאה האחרונה נכשלה
 let rtChannel = null;          // ערוץ זמן-אמת: מודיע למכשירים אחרים על שינוי מיד
 let _broadcastAfterPush = false; // האם ההעלאה הקרובה נובעת מעריכה אמיתית (ואז מצפצפים לשאר)
 
-function getCloudMeta() { return Store.get('cloudMeta', { localUpdatedAt: null, lastServerUpdatedAt: null }); }
+function getCloudMeta() { return Store.get('cloudMeta', { localUpdatedAt: null, lastServerUpdatedAt: null, pendingLocal: false }); }
 function setCloudMeta(m) { Store.set('cloudMeta', m); }
 function cloudStatus() { return cloudSession && cloudSession.user ? cloudSession.user.email : null; }
+
+// ---- "יש שינוי מקומי שממתין להעלאה" — דגל מפורש, לא השוואת שעונים ----
+// זה לב ההגנה על עריכות שנעשו באופליין: כל עוד הדגל דלוק, הענן לעולם לא דורס
+// את הנתונים המקומיים, וההעלאה תנוסה שוב עד שתצליח.
+// למה דגל ולא חותמות-זמן: החותמות נוצרות בכל מכשיר לפי השעון שלו. אם שעון מכשיר אחר
+// מקדים (אפילו בדקות), החותמת שלו גדולה מזמן העריכה המקומית — והמערכת הסיקה בטעות
+// "אין שינוי מקומי", לא העלתה את העריכה, ובמשיכה הבאה מהענן היא נמחקה.
+function hasPendingLocal(m) {
+  const meta = m || getCloudMeta();
+  if (typeof meta.pendingLocal === 'boolean') return meta.pendingLocal;
+  // תאימות לאחור: מטא ישן ללא דגל — נגזר מהחותמות הקיימות
+  const localT = meta.localUpdatedAt ? new RealDate(meta.localUpdatedAt).getTime() : 0;
+  const serverT = meta.lastServerUpdatedAt ? new RealDate(meta.lastServerUpdatedAt).getTime() : 0;
+  return localT > serverT;
+}
+function markLocalPending() {
+  try {
+    _localEditSeq++;
+    const m = getCloudMeta();
+    m.pendingLocal = true;
+    m.localUpdatedAt = new RealDate().toISOString();
+    setCloudMeta(m);
+  } catch (e) { console.error('markLocalPending', e); }
+}
+// כיבוי הדגל רק אם לא נכנסה עריכה נוספת בזמן ההעלאה (אחרת היא הייתה "נבלעת")
+function clearLocalPending(seqAtSend, serverStamp) {
+  const upToDate = (_localEditSeq === seqAtSend);
+  try {
+    const m = getCloudMeta();
+    m.lastServerUpdatedAt = serverStamp;
+    if (upToDate) { m.pendingLocal = false; m.localUpdatedAt = serverStamp; }
+    setCloudMeta(m);
+  } catch (e) { console.error('clearLocalPending', e); }
+  return upToDate;
+}
 
 function collectStateData() {
   const d = {};
@@ -9060,11 +9121,45 @@ function initCloud() {
       cloudSession = data && data.session ? data.session : null;
       if (cloudSession) { updateCloudUI(); cloudSyncNow(true); setupRealtime(); }
     });
-    sb.auth.onAuthStateChange((_ev, session) => { cloudSession = session; updateCloudUI(); updateSyncIndicator(); setupRealtime(); });
-    window.addEventListener('online', () => { updateSyncIndicator(); if (cloudSession) cloudSyncNow(true); });
+    sb.auth.onAuthStateChange((_ev, session) => {
+      const hadSession = !!cloudSession;
+      cloudSession = session;
+      updateCloudUI(); updateSyncIndicator(); setupRealtime();
+      // חזרת מושב (רענון טוקן אחרי אופליין ממושך) — אם יש שינוי שממתין, מעלים מיד
+      if (session && !hadSession && navigator.onLine && hasPendingLocal()) cloudSyncNow(true);
+    });
+    window.addEventListener('online', () => {
+      cancelCloudRetry(); updateSyncIndicator();
+      if (cloudSession) cloudSyncNow(true);
+    });
     window.addEventListener('offline', () => { updateSyncIndicator(); });
+    // רשת ביטחון לאירוע online שלא נורה: ב-PWA (במיוחד iOS) האפליקציה חוזרת מהרקע
+    // עם רשת חדשה בלי שהאירוע נורה — ואז עריכה שנעשתה באופליין נשארת תקועה במכשיר.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!sb || !cloudSession || !navigator.onLine) return;
+      if (hasPendingLocal()) { cancelCloudRetry(); cloudSyncNow(true); }
+    });
     updateSyncIndicator();
   } catch (e) { console.error('initCloud failed', e); }
+}
+
+// ניסיון חוזר אחרי כשל רשת/אופליין — 5ש', 10, 20, 40, ואז כל דקה עד שמצליח.
+// בלי זה, עריכה שנעשתה באופליין הייתה ממתינה עד לעריכה הבאה או להפעלה מחדש.
+function scheduleCloudRetry() {
+  if (_cloudRetryTimer) return;
+  _cloudRetryDelay = _cloudRetryDelay ? Math.min(_cloudRetryDelay * 2, 60000) : 5000;
+  _cloudRetryTimer = setTimeout(() => {
+    _cloudRetryTimer = null;
+    if (!sb || !cloudSession) return;
+    if (!hasPendingLocal()) { _cloudRetryDelay = 0; return; }
+    if (!navigator.onLine) { scheduleCloudRetry(); return; }  // עדיין אין רשת — ננסה שוב
+    cloudPush('ניסיון חוזר אחרי כשל רשת');
+  }, _cloudRetryDelay);
+}
+function cancelCloudRetry() {
+  if (_cloudRetryTimer) clearTimeout(_cloudRetryTimer);
+  _cloudRetryTimer = null; _cloudRetryDelay = 0;
 }
 
 // ============ עדכון מיידי בין מכשירים (ערוץ זמן-אמת) ============
@@ -9096,14 +9191,18 @@ function broadcastUpdate() {
 
 // ============ חיווי סנכרון בטופ-בר (נקודה ירוקה/כתומה/אדומה משמאל לשעון) ============
 function computeSyncState() {
-  if (!navigator.onLine) return { s: 'error', t: 'אין חיבור לרשת — הנתונים נשמרים מקומית ולא עלו לענן' };
+  const pending = hasPendingLocal();
+  if (!navigator.onLine) {
+    return pending
+      ? { s: 'pending', t: 'אין חיבור לרשת — השינויים שמורים במכשיר ויעלו לענן כשהחיבור יחזור' }
+      : { s: 'error', t: 'אין חיבור לרשת — הנתונים נשמרים מקומית' };
+  }
   if (!sb || !cloudSession) return { s: 'error', t: 'לא מחובר לענן — הנתונים נשמרים מקומית בלבד' };
   if (cloudPushing) return { s: 'pending', t: 'מעלה נתונים לענן…' };
   if (cloudLastError) return { s: 'error', t: 'העלאת הנתונים לענן נכשלה — ינסה שוב' };
+  if (pending) return { s: 'pending', t: 'יש שינויים שממתינים להעלאה לענן' };
   const m = getCloudMeta();
-  const localT = m.localUpdatedAt ? new RealDate(m.localUpdatedAt).getTime() : 0;
-  const serverT = m.lastServerUpdatedAt ? new RealDate(m.lastServerUpdatedAt).getTime() : 0;
-  if (!m.lastServerUpdatedAt || localT > serverT) return { s: 'pending', t: 'יש שינויים שממתינים להעלאה לענן' };
+  if (!m.lastServerUpdatedAt) return { s: 'pending', t: 'יש שינויים שממתינים להעלאה לענן' };
   return { s: 'synced', t: 'הנתונים מסונכרנים ומגובים בענן ✓' };
 }
 
@@ -9116,12 +9215,18 @@ function updateSyncIndicator() {
   el.title = t;
 }
 
+// משיכה מהענן. מחזיר { ok, row }:
+// ok=false פירושו "לא הצלחנו לקרוא את הענן" (אין רשת/שגיאה) — שונה לחלוטין מ-"הענן ריק".
+// ההפרדה הזו קריטית: קודם כשל-רשת נראה כמו ענן ריק, ומכאן נגזרו החלטות דריסה שגויות.
 async function cloudPull() {
-  if (!sb || !cloudSession) return null;
-  const { data, error } = await sb.from('household_state')
-    .select('data, updated_at').eq('user_id', cloudSession.user.id).maybeSingle();
-  if (error) { console.error('cloudPull', error); return null; }
-  return data;
+  if (!sb || !cloudSession) return { ok: false, row: null };
+  if (!navigator.onLine) return { ok: false, row: null };
+  try {
+    const { data, error } = await sb.from('household_state')
+      .select('data, updated_at').eq('user_id', cloudSession.user.id).maybeSingle();
+    if (error) { console.error('cloudPull', error); return { ok: false, row: null }; }
+    return { ok: true, row: data || null };
+  } catch (e) { console.error('cloudPull', e); return { ok: false, row: null }; }
 }
 
 // השוואת נתוני משתמש (ללא מעקב מכשירים/יומן) בין המצב המקומי לנתונים מהענן.
@@ -9151,17 +9256,33 @@ function autoRefreshBackup() {
 
 async function cloudPush(reason) {
   if (!sb || !cloudSession) return false;
+  if (cloudPushing) return false;                       // כבר מעלים — ההעלאה הנוכחית תסיים את העבודה
+  if (!navigator.onLine) {
+    // אין רשת: השינוי כבר שמור במכשיר ומסומן כממתין. לא מציפים בשגיאות — רק ננסה שוב.
+    updateSyncIndicator();
+    if (hasPendingLocal()) scheduleCloudRetry();
+    return false;
+  }
   cloudPushing = true; updateSyncIndicator();
-  // לפני ההעלאה: בדיקת מצב הענן, כדי שההעלאה לא תדרוס נתונים ממכשירים אחרים
+  // לפני ההעלאה: קריאת מצב הענן, כדי שההעלאה לא תדרוס נתונים ממכשירים אחרים
   // (ההעלאה מחליפה את כל התמונה בענן).
+  const pull = await cloudPull();
+  if (!pull.ok) {
+    // לא הצלחנו לקרוא את הענן — אסור להעלות "בעיוורון": ההעלאה מחליפה את כל התמונה
+    // בענן והייתה עלולה למחוק שינויים ממכשיר אחר. השינוי המקומי נשאר מסומן וננסה שוב.
+    cloudPushing = false; cloudLastError = true; updateSyncIndicator();
+    scheduleCloudRetry();
+    return false;
+  }
+  const remote = pull.row;
   try {
-    const remote = await cloudPull();
     if (remote && remote.data && typeof remote.data === 'object') {
       const m0 = getCloudMeta();
-      const localT0 = m0.localUpdatedAt ? new RealDate(m0.localUpdatedAt).getTime() : 0;
-      const lastServerT0 = m0.lastServerUpdatedAt ? new RealDate(m0.lastServerUpdatedAt).getTime() : 0;
-      const remoteT0 = remote.updated_at ? new RealDate(remote.updated_at).getTime() : 0;
-      if (remoteT0 > lastServerT0 && localT0 <= lastServerT0 && !dataIsEmpty(remote.data)) {
+      const pending = hasPendingLocal(m0);
+      // "הענן התקדם" = שורת הענן שונה מהגרסה שראינו לאחרונה. השוואת מחרוזות ולא זמנים —
+      // כדי שהפרשי שעון בין מכשירים לא ישבשו את ההחלטה.
+      const remoteAdvanced = remote.updated_at !== m0.lastServerUpdatedAt;
+      if (remoteAdvanced && !pending && !dataIsEmpty(remote.data)) {
         // הענן התעדכן ממכשיר אחר ואין כאן עריכות שממתינות — מאמצים את נתוני הענן
         // לפני ההעלאה (רענון אוטומטי: כך משימה שנוספה במכשיר אחר מופיעה כאן ולא נדרסת).
         const changed = userDataChanged(remote.data);
@@ -9184,29 +9305,63 @@ async function cloudPush(reason) {
       }
     }
   } catch (e) { console.error('cloudPush merge', e); }
+  // חותמת המונה נלקחת בדיוק ברגע איסוף הנתונים: עריכה שתיכנס מכאן והלאה
+  // לא תיחשב כ"הועלתה", והדגל יישאר דלוק כדי שהיא תעלה בהעלאה הבאה.
+  const seqAtSend = _localEditSeq;
+  const payload = collectStateData();
   const now = new RealDate().toISOString();
-  const { error } = await sb.from('household_state').upsert(
-    { user_id: cloudSession.user.id, data: collectStateData(), updated_at: now },
-    { onConflict: 'user_id' }
-  );
+  let error = null;
+  try {
+    const res = await sb.from('household_state').upsert(
+      { user_id: cloudSession.user.id, data: payload, updated_at: now },
+      { onConflict: 'user_id' }
+    );
+    error = res.error;
+  } catch (e) { error = e; }
   if (error) {
-    console.error('cloudPush', error); toast('סנכרון לענן נכשל', 'danger');
+    console.error('cloudPush', error);
     cloudPushing = false; cloudLastError = true; updateSyncIndicator();
+    scheduleCloudRetry();
     return false;
   }
-  const m = getCloudMeta(); m.lastServerUpdatedAt = now; m.localUpdatedAt = now; setCloudMeta(m);
+  cancelCloudRetry();
+  const fullyUploaded = clearLocalPending(seqAtSend, now);
   cloudPushing = false; cloudLastError = false;
   // אם ההעלאה כללה עריכה אמיתית — מודיעים לשאר המכשירים שימשכו את העדכון מיד
   if (_broadcastAfterPush) { _broadcastAfterPush = false; broadcastUpdate(); }
   updateCloudUI();
   updateSyncIndicator();
+  // עריכה נכנסה תוך כדי ההעלאה — מעלים שוב (הדגל נשאר דלוק, שום שינוי לא הולך לאיבוד)
+  if (!fullyUploaded) scheduleCloudPush(true);
   return true;
 }
 
-// סנכרון מלא: מיישב בין מקומי לענן. כלל ברזל: נתונים מקומיים לעולם לא נדרסים על ידי ענן ריק.
+// סנכרון מלא: מיישב בין מקומי לענן. כלל ברזל: נתונים מקומיים לעולם לא נדרסים על ידי ענן ריק,
+// ולעולם לא על ידי כשל-רשת שנראה כמו ענן ריק.
 async function cloudSyncNow(silent) {
+  if (_cloudSyncBusy) return;
+  _cloudSyncBusy = true;
+  try { await _cloudSyncNowInner(silent); }
+  finally { _cloudSyncBusy = false; }
+}
+
+async function _cloudSyncNowInner(silent) {
   if (!sb || !cloudSession) { if (!silent) toast('אינך מחובר', 'warning'); return; }
-  const remote = await cloudPull();
+  if (!navigator.onLine) {
+    if (hasPendingLocal()) scheduleCloudRetry();
+    updateSyncIndicator();
+    if (!silent) toast('אין חיבור לרשת — השינויים שמורים במכשיר ויעלו כשהחיבור יחזור', 'warning');
+    return;
+  }
+  const pull = await cloudPull();
+  if (!pull.ok) {
+    // כשל קריאה — לא נוגעים בנתונים המקומיים ולא מעלים בעיוורון.
+    cloudLastError = true; updateSyncIndicator();
+    if (hasPendingLocal()) scheduleCloudRetry();
+    if (!silent) toast('לא ניתן להתחבר לענן כרגע — השינויים שמורים במכשיר וינסו לעלות שוב', 'warning');
+    return;
+  }
+  const remote = pull.row;
   const m = getCloudMeta();
   const localEmpty = localIsEmpty();
   const remoteEmpty = !remote || dataIsEmpty(remote.data);
@@ -9227,15 +9382,12 @@ async function cloudSyncNow(silent) {
     renderView(); return;
   }
   // בשני הצדדים יש נתונים — מיזוג בטוח (אופליין-פירסט):
-  // שינויים מקומיים שטרם הועלו לעולם לא נדרסים. מושכים מהענן רק אם הוא התקדם
-  // מעבר לגרסה שקיבלנו לאחרונה, ואין שינויים מקומיים שממתינים להעלאה.
-  const localT = m.localUpdatedAt ? new RealDate(m.localUpdatedAt).getTime() : 0;
-  const remoteT = remote.updated_at ? new RealDate(remote.updated_at).getTime() : 0;
-  const lastServerT = m.lastServerUpdatedAt ? new RealDate(m.lastServerUpdatedAt).getTime() : 0;
-  const hasPendingLocal = localT > lastServerT;   // שינויים מקומיים שלא הועלו
-  const remoteAdvanced = remoteT > lastServerT;   // הענן התעדכן ממכשיר אחר
+  // שינויים מקומיים שטרם הועלו לעולם לא נדרסים. מושכים מהענן רק אם שורת הענן השתנתה
+  // מאז הגרסה שראינו לאחרונה, ואין שינויים מקומיים שממתינים להעלאה.
+  const pending = hasPendingLocal(m);                          // שינויים מקומיים שלא הועלו
+  const remoteAdvanced = remote.updated_at !== m.lastServerUpdatedAt;  // הענן התעדכן ממכשיר אחר
 
-  if (hasPendingLocal) {
+  if (pending) {
     // יש עריכות מקומיות שטרם עלו — הן מנצחות תמיד (העלאה). בקונפליקט אמיתי — גיבוי ליתר ביטחון.
     if (remoteAdvanced) makeAutoBackup('מיזוג: שינויים מקומיים גוברים על עדכון מהענן');
     if (await cloudPush('העלאת שינויים מקומיים') && !silent) toast('השינויים המקומיים הועלו לענן', 'success');
@@ -9260,16 +9412,14 @@ function scheduleCloudPush(heartbeat) {
   // עריכה אמיתית של המשתמש מסומנת כשינוי מקומי — גם באופליין וגם ללא חשבון ענן.
   // קריטי: כך העריכות המקומיות תמיד "מנצחות" בסנכרון הבא ולא נדרסות ע"י הענן.
   if (!heartbeat) {
-    try {
-      const m = getCloudMeta();
-      m.localUpdatedAt = new RealDate().toISOString();
-      setCloudMeta(m);
-    } catch (e) { console.error('scheduleCloudPush meta', e); }
+    markLocalPending();
     _broadcastAfterPush = true; // עריכה אמיתית — אחרי ההעלאה נודיע לשאר המכשירים מיד
   }
   if (typeof updateSyncIndicator === 'function') updateSyncIndicator();
   // דחיפה בפועל לרשת רק אם יש חיבור לחשבון ולקוח ענן פעיל
   if (!sb || !cloudSession) return;
+  // אין רשת — לא מנסים עכשיו; הדגל דלוק וניסיון חוזר יטפל בזה כשהחיבור יחזור
+  if (!navigator.onLine) { if (!heartbeat) scheduleCloudRetry(); return; }
   if (_cloudPushTimer) clearTimeout(_cloudPushTimer);
   _cloudPushTimer = setTimeout(() => { cloudPush('שמירה אוטומטית'); }, 2500);
 }
@@ -9307,6 +9457,10 @@ function cloudCardHtml() {
   if (email) {
     const m = getCloudMeta();
     const last = m.lastServerUpdatedAt ? new RealDate(m.lastServerUpdatedAt).toLocaleString('he-IL') : 'טרם סונכרן';
+    // שינוי שנעשה באופליין נשאר מסומן עד שיעלה — מציגים זאת במפורש כדי שלא יהיה ספק שהוא נשמר
+    const pendingLine = hasPendingLocal(m)
+      ? `<div style="font-size:12px; color:var(--warning, #d9a441); margin-top:6px;">יש שינויים שנשמרו במכשיר וממתינים להעלאה לענן${navigator.onLine ? '' : ' (אין רשת כרגע)'}</div>`
+      : '';
     return `
     <div class="card" style="margin-top:16px;">
       <div class="card-title">${icon('cloud')} סנכרון ענן</div>
@@ -9315,6 +9469,7 @@ function cloudCardHtml() {
           ${icon('check', 16)} מחובר · ${email}
         </div>
         <div style="font-size:12px; color:var(--text-secondary); margin-top:6px;">סנכרון אחרון: ${last}</div>
+        ${pendingLine}
       </div>
       <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
         <button class="btn btn-primary" onclick="cloudSyncNow(false)">${icon('refresh', 14)} סנכרן עכשיו</button>
