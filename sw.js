@@ -16,9 +16,13 @@ const ASSETS = [
   './manifest.json'
 ];
 
+// כל קובץ נשמר בנפרד: ב-addAll כשל בקובץ אחד (רשת/תמונה כבדה) מפיל את כל ההתקנה,
+// והאפליקציה נשארת בלי מטמון — כלומר בלי אופליין בכלל.
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then((c) => Promise.all(ASSETS.map((a) => c.add(a).catch(() => null))))
+      .then(() => self.skipWaiting())
   );
 });
 
